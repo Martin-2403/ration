@@ -787,7 +787,67 @@ Out of scope for MVP: e2e and visual-regression testing.
 ---
 
 ## 19. Coding with AI coding assistant
+
+This is a collaboration, not a handoff. The goal is to keep the speed of assisted
+coding without losing the mental model of the codebase.
+
+### Division of work: split by who decides, not who types
+
+The instinct to "keep the small tasks" is backwards — small tasks teach the least
+per minute spent. The files that constrain everything else are the ones worth typing
+by hand, and in this project they are short.
+
+**Owned by the human** — the shapes that everything downstream reads:
+
+- `data/nutrients.ts`, the registry (§5), and the type definitions in `db.ts`
+- anything touching provenance semantics (§3) or the `daysLogged` denominator and
+  window math (§9) — the places where a wrong answer still looks plausible
+- the **[verify]** items in §18, categorically. They need authoritative sources, and
+  the assistant is specifically instructed not to fill them in from memory
+
+**Owned by the assistant** — mechanical expansion of decisions already made:
+
+- Dexie schema boilerplate, Pinia store plumbing, router wiring
+- Vue component markup and token wiring (§15)
+- the German OCR vocabulary (§14) — tedious data entry
+- resolver tier plumbing (§4), WebCrypto envelope mechanics (§10)
+
+### Tests are the interface
+
+Where it fits: **the human writes the failing test, the assistant makes it pass.**
+Stating what "correct" means is the part worth doing by hand; §17 already enumerates
+the surface. This matters most for `units.ts` conversions, the evaluation
+denominator, and anything where a plausible-looking wrong number would go unnoticed.
+
+### Working rhythm
+
+- **One issue → one branch → one PR.** The issues are scoped for this.
+- **Never merge a diff that hasn't been read line by line.** A diff too big to hold
+  in your head means the task was scoped too big — that is a scoping signal, not a
+  reason to skim.
+- For anything non-obvious, ask for the approach in a few lines *before* any code.
+  Far cheaper to disagree about a sentence than about a 300-line diff.
+- Speed comes from deciding and reviewing quickly, not from typing quickly. Code
+  written by hand will not be fast, and that is fine — it is bought understanding.
+- Watch for rubber-stamping when tired. The fix is to stop merging, not to read
+  harder.
+
+### When the assistant stops and asks
+
+Stop and ask rather than decide, whenever:
+
+- the answer is not already in this document
+- a **[verify]** value would have to be guessed to continue
+- the change would bend one of the non-negotiables in §0
+- the diff is growing past what a single PR should carry
+- the request has a plausible second reading that leads somewhere different
+
+State what you would do and why in a couple of lines, then wait. Conversely: do
+**not** ask about things this document already settles — read it first.
+
+### Code style
+
 - keep code simple and readable
-- comment complicated code explaining whys not just what 
+- comment complicated code explaining whys not just what
 - keep commits clean, no AI reference, short explanatory commit message
 
