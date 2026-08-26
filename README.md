@@ -1,54 +1,50 @@
-# _scaffold
+# Ration
 
-This template should help get you started developing with Vue 3 in Vite.
+A local-first calorie and nutrient tracking PWA. Meal templates, barcode lookup,
+supplements, and long-term nutrient evaluation — all stored on the device, with
+user-controlled encrypted backup. No accounts, no server.
 
-## Recommended IDE Setup
+**[PROJECT.md](PROJECT.md) is the spec and the single source of truth.** Read it
+before changing anything: it records the architecture decisions and, more usefully,
+why each was made.
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## Running it
 
-## Recommended Browser Setup
+Node is pinned by `.nvmrc` (the `engines` field needs >= 24.12):
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Type Support for `.vue` Imports in TS
-
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
+```bash
+nvm use
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
 ```
 
-### Type-Check, Compile and Minify for Production
+Then open the URL Vite prints, normally http://localhost:5173/.
 
-```sh
-npm run build
-```
+## Scripts
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | dev server with hot module replacement |
+| `npm run build` | type-check, then production build into `dist/` |
+| `npm run type-check` | `vue-tsc` — the dev server does **not** type-check |
+| `npm run lint` | ESLint with `--fix` |
+| `npm run format` | Prettier over `src/` |
+| `npm run test:unit` | tests in watch mode |
+| `npx vitest run` | tests once |
 
-```sh
-npm run test:unit
-```
+The dev server strips types without checking them, so a type error can sit there
+while the page looks fine. `npm run type-check` is the real gate.
 
-### Lint with [ESLint](https://eslint.org/)
+## Layout
 
-```sh
-npm run lint
-```
+See §16 of PROJECT.md for the full structure and the reasoning. In short:
+
+- `src/data/` — the nutrient registry, seed foods, reference intakes
+- `src/views/` — route targets; `src/components/` — reusable pieces
+- `src/theme/tokens.css` — design tokens, the single source of truth for styling
+- `src/stores/` — Pinia; `src/db.ts` — Dexie behind a repository interface
+
+## Contributing
+
+§19 of PROJECT.md describes how work is split and reviewed, including when an AI
+assistant should stop and ask rather than decide.
