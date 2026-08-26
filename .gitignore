@@ -16,8 +16,7 @@ coverage/
 
 # IDE
 .idea/
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 
 # OS
 .DS_Store

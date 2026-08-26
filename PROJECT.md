@@ -19,9 +19,12 @@ follow the build order.
 
 **First session — scaffolding:**
 
-1. Scaffold a Vite + Vue 3 + TypeScript project (`npm create vite@latest`, Vue+TS
-   template). Install `pinia`, `dexie`, `vue-router`, `lucide-vue-next` and the Vite
-   PWA plugin; as dev dependencies, `vitest` and `@vue/test-utils` (§17).
+1. Scaffold with `npm create vue@latest` — Vue's own scaffolder — selecting
+   TypeScript, Router, Pinia, Vitest, ESLint and Prettier. It wires those up
+   correctly, including the Vitest config, which is tedious to assemble by hand.
+   Then install `dexie`, `@lucide/vue`, `vite-plugin-pwa`, and the IBM Plex fonts
+   (see §15). Note: create-vue also ships `oxlint` with a mismatched peer range
+   that blocks further installs — remove `oxlint` and `eslint-plugin-oxlint`.
 2. Create `src/theme/tokens.css` from the design tokens in §15 (palette, type,
    motion) — **both the light and dark blocks**, not light alone. Load IBM Plex Sans
    + IBM Plex Mono. Components reference CSS variables, never literal hex.
@@ -105,7 +108,10 @@ against real lab results. Runs on most devices from one codebase.
 - **vue-router** for navigation. Real URLs per view, deep-linkable days, and back-
   button behaviour that matches an installed PWA — a tab flag in `App.vue` gives
   none of those and is painful to unpick later.
-- **Vite PWA plugin / Workbox** for the service worker.
+- **Vite PWA plugin / Workbox** for the service worker. Registered minimally from
+  the start — manifest plus an auto-updating worker — so the app is installable
+  early, since §10 treats installation as a durability feature. The two-cache
+  strategy in §13 waits for layer 3, where the routes it caches actually exist.
 - **Vitest** + **@vue/test-utils** for tests (§17).
 - Storage sits behind a **repository interface** so the persistence layer can
   change (e.g. add sync) without touching UI.
@@ -638,10 +644,17 @@ the tokens land, and for any pair added later.
 - No serif.
 - Scale: display 28–32 / 600 · section 18 / 500 · body 14–15 / 400 · caption 12 /
   500 with uppercase tracking for eyebrows and field labels.
+- **Loaded self-hosted, not from a CDN**: `@fontsource-variable/ibm-plex-sans` (the
+  variable build — one file covers 400/500/600) and `@fontsource/ibm-plex-mono` at
+  400 and 500 only, since mono is used sparingly. Bundled by Vite and cached by the
+  service worker, so text renders offline (§13) and no request per user leaves the
+  device. Imported in `main.ts`; the `font-family` declarations live in
+  `theme/tokens.css`.
 
 ### Iconography
 
-- **Lucide** line icons (`lucide-vue-next`), 1.5px stroke, 16–20px, consistent.
+- **Lucide** line icons (`@lucide/vue` — `lucide-vue-next` is deprecated upstream),
+  1.5px stroke, 16–20px, consistent.
 - Small chevrons / line-arrows for navigable rows, as in the reference. Never emoji.
 
 ### Motion
