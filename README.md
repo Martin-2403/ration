@@ -1,5 +1,7 @@
 # Ration
 
+[![CI](https://github.com/Martin-2403/ration/actions/workflows/ci.yml/badge.svg)](https://github.com/Martin-2403/ration/actions/workflows/ci.yml)
+
 A local-first calorie and nutrient tracking PWA. Meal templates, barcode lookup,
 supplements, and long-term nutrient evaluation — all stored on the device, with
 user-controlled encrypted backup. No accounts, no server.
@@ -27,13 +29,18 @@ Then open the URL Vite prints, normally http://localhost:5173/.
 | `npm run dev` | dev server with hot module replacement |
 | `npm run build` | type-check, then production build into `dist/` |
 | `npm run type-check` | `vue-tsc` — the dev server does **not** type-check |
-| `npm run lint` | ESLint with `--fix` |
+| `npm run lint` | ESLint, check only — what CI runs |
+| `npm run lint:fix` | ESLint with `--fix`, for local use |
 | `npm run format` | Prettier over `src/` |
 | `npm run test:unit` | tests in watch mode |
-| `npx vitest run` | tests once |
+| `npm run test:unit -- --run` | tests once |
 
 The dev server strips types without checking them, so a type error can sit there
-while the page looks fine. `npm run type-check` is the real gate.
+while the page looks fine. `npm run type-check` is the real gate — and note that
+the test run can't stand in for it, because Vitest erases type-only imports and
+so never notices a module that doesn't exist.
+
+CI runs lint, type-check, tests and build on every push and pull request.
 
 ## Layout
 

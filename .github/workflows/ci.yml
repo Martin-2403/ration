@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes the previous run on the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Reads .nvmrc, so CI and local development cannot drift apart.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Separate steps rather than one script: a failure names which gate broke.
+      - name: Lint
+        run: npm run lint
+
+      # The dev server strips types without checking them, so this is the only
+      # thing that catches a type error — including a broken type-only import,
+      # which the test run cannot see because it erases them.
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Tests
+        run: npm run test:unit -- --run
+
+      # build-only, because `npm run build` would repeat the type-check above.
+      - name: Build
+        run: npm run build-only
