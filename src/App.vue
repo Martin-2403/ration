@@ -1,9 +1,9 @@
 <script setup lang="ts"></script>
 
 <template>
-  <!-- Unstyled on purpose: theme/tokens.css (§15) is not written yet, and
-       styling this before the tokens exist would mean hardcoding values the
-       tokens are meant to own. -->
+  <!-- Still unstyled beyond the element defaults in theme/base.css. The real
+       shell — cards, dividers, line-arrow rows (§15) — arrives with layer 1,
+       when there is actual content to lay out. -->
   <nav>
     <RouterLink to="/">Today</RouterLink>
     <RouterLink to="/evaluation">Evaluation</RouterLink>

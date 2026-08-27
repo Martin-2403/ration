@@ -11,6 +11,10 @@ import '@fontsource-variable/ibm-plex-sans'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 
+// Tokens before base: base.css reads the variables tokens.css declares.
+import './theme/tokens.css'
+import './theme/base.css'
+
 import App from './App.vue'
 import router from './router'
 
