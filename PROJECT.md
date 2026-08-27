@@ -728,10 +728,14 @@ src/
     NutrientReport.vue  NutrientBar.vue  FoodForm.vue
     SupplementForm.vue  BackupPanel.vue
   App.vue
-tests/
-  units.spec.ts  totals.spec.ts  evaluation.spec.ts  resolver.spec.ts
-  components/           // provenance, no-data and over-limit rendering (§17)
 ```
+
+**Tests live beside the code they cover**, in a `__tests__/` directory next to it —
+`src/data/__tests__/nutrients.spec.ts`, `src/__tests__/units.spec.ts`, and so on.
+Not a parallel root-level `tests/` tree: the source layout above already encodes
+which module owns what, and a mirror tree throws that away and then drifts from it.
+`eslint.config.ts` scopes the Vitest plugin to `src/**/__tests__/*` for the same
+reason. Colocated test files never reach the bundle — nothing imports them.
 
 **Build sequence** (each layer shippable before the next):
 
