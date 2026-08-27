@@ -10,22 +10,79 @@ const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
 
 const keys = Object.keys(NUTRIENTS) as NutrientKey[]
 
-const name = ref('')
-const grams = ref<number | null>(null)
-const values = ref<Partial<Record<NutrientKey, number>>>({})
+/**
+ * What a number input can actually hold. `v-model.number` leaves the raw string
+ * in place when it will not parse, and a `type="number"` field reports both a
+ * cleared field and unparseable content as `''` — so the model is wider than
+ * `number` whether we like it or not, and typing it honestly is what lets the
+ * checks below tell blank apart from invalid.
+ */
+type FieldValue = number | '' | null | undefined
 
-const canSubmit = computed(
-  () => name.value.trim().length > 0 && grams.value !== null && grams.value > 0,
+const name = ref('')
+const grams = ref<FieldValue>(null)
+const values = ref<Partial<Record<NutrientKey, FieldValue>>>({})
+
+const isBlank = (value: FieldValue) => value === '' || value === null || value === undefined
+
+const isUsableAmount = (value: FieldValue) =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0
+
+/**
+ * Fields holding text a number input cannot parse.
+ *
+ * Needed because the model alone cannot tell blank from invalid: Chrome keeps
+ * "abc" visible in a number field while reporting `value` as `''`. Treating that
+ * as blank would silently record "no data" for a field the user can see content
+ * in. `validity.badInput` is the only thing that distinguishes the two.
+ */
+const badFields = ref(new Set<string>())
+
+function trackValidity(field: string, event: Event) {
+  const input = event.target as HTMLInputElement
+  const next = new Set(badFields.value)
+
+  if (input.validity.badInput) next.add(field)
+  else next.delete(field)
+
+  badFields.value = next
+}
+
+const canSubmit = computed(() => {
+  if (badFields.value.size > 0) return false
+  if (name.value.trim().length === 0) return false
+
+  // Grams must be a real positive number: it is what everything gets scaled by.
+  if (!isUsableAmount(grams.value) || grams.value === 0) return false
+
+  // Nutrient fields are optional, so blank passes — that is the documented way
+  // to say "no data". Anything present must be a usable number.
+  return Object.values(values.value).every((value) => isBlank(value) || isUsableAmount(value))
+})
+
+const hasNegative = computed(() =>
+  [grams.value, ...Object.values(values.value)].some(
+    (value) => typeof value === 'number' && value < 0,
+  ),
 )
 
 function submit() {
   if (!canSubmit.value) return
 
-  emit('submit', buildUserFood({ name: name.value, per100g: values.value }), grams.value!)
+  // Drop blanks rather than passing '' through: buildUserFood records an absent
+  // key as unknown, which is what a blank field means.
+  const per100g: Partial<Record<NutrientKey, number>> = {}
+  for (const key of keys) {
+    const value = values.value[key]
+    if (typeof value === 'number') per100g[key] = value
+  }
+
+  emit('submit', buildUserFood({ name: name.value, per100g }), grams.value as number)
 
   name.value = ''
   grams.value = null
   values.value = {}
+  badFields.value = new Set()
 }
 </script>
 
@@ -50,7 +107,14 @@ function submit() {
       <div class="row">
         <label for="food-grams">Eaten</label>
         <span class="amount">
-          <input id="food-grams" v-model.number="grams" type="number" min="0" step="5" />
+          <input
+            id="food-grams"
+            v-model.number="grams"
+            type="number"
+            min="0"
+            step="5"
+            @input="trackValidity('grams', $event)"
+          />
           g
         </span>
       </div>
@@ -64,12 +128,20 @@ function submit() {
             type="number"
             min="0"
             step="any"
+            :aria-invalid="badFields.has(key) || undefined"
+            @input="trackValidity(key, $event)"
           />
           {{ unitFor(key) }} / 100 g
         </span>
       </div>
 
       <div class="footer">
+        <!-- A disabled button with no stated reason is its own bug. -->
+        <p v-if="badFields.size > 0" class="problem" role="status">
+          {{ badFields.size === 1 ? 'A value is' : 'Some values are' }} not a number
+        </p>
+        <p v-else-if="hasNegative" class="problem" role="status">Values cannot be negative</p>
+
         <button type="submit" :disabled="!canSubmit">Save and log</button>
       </div>
     </form>
@@ -147,9 +219,22 @@ input[type='text'] {
 
 .footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--line);
+}
+
+/* Paired with text, never colour alone (§15). */
+.problem {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--status-under);
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--status-under);
 }
 
 button {

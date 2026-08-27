@@ -74,6 +74,49 @@ describe('FoodForm', () => {
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
 
+  it('stays submittable after a value field is filled then cleared', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-protein').setValue('12')
+    await wrapper.find('#food-protein').setValue('')
+
+    // Clearing a field is how the form says "no data" — it must not leave the
+    // submit button stuck. v-model.number leaves '' in the model, which is not a
+    // number, so a naive numeric check disables submit with nothing on screen
+    // to explain why.
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('records a cleared value field as unknown', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-protein').setValue('12')
+    await wrapper.find('#food-protein').setValue('')
+    await wrapper.find('form').trigger('submit')
+
+    const [food] = wrapper.emitted('submit')![0] as [
+      { per100g: Record<string, { value: number; source: string }> },
+    ]
+
+    expect(food.per100g.protein?.source).toBe('unknown')
+  })
+
+  it('refuses a negative value and says so', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-protein').setValue('-5')
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('cannot be negative')
+  })
+
+  it('refuses a negative amount eaten', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '-150' })
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+  })
+
   it('offers an input for every tracked nutrient', () => {
     const wrapper = mount(FoodForm)
 

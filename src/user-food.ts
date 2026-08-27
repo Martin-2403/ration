@@ -25,10 +25,16 @@ export function buildUserFood(input: UserFoodInput, id: string = crypto.randomUU
     // the resolver does with a nutrient it could not fill (§4, step 4). Both
     // behave the same when summed, but an explicit unknown says "asked, no
     // answer" instead of "never considered" — and it must never become a zero.
+    //
+    // The check is `Number.isFinite`, not `!Number.isNaN`: an unparseable number
+    // input yields the empty string, and `Number.isNaN('')` is false, so a
+    // looser guard would store a string where a number belongs and turn every
+    // downstream total into NaN. Callers validate too, but this is the boundary
+    // that must not let a non-number through.
     per100g[key] =
-      value === undefined || Number.isNaN(value)
-        ? { value: 0, source: 'unknown' }
-        : { value, source: 'user' }
+      typeof value === 'number' && Number.isFinite(value)
+        ? { value, source: 'user' }
+        : { value: 0, source: 'unknown' }
   }
 
   return { id, name: input.name.trim(), per100g }

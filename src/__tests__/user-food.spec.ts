@@ -19,11 +19,29 @@ describe('buildUserFood', () => {
   })
 
   it('treats NaN as blank rather than storing it', () => {
-    // An empty number input yields NaN through v-model.number.
     const food = buildUserFood({ name: 'Apple', per100g: { protein: NaN } }, 'fixed-id')
 
     expect(food.per100g.protein?.source).toBe('unknown')
     expect(Number.isNaN(food.per100g.protein?.value)).toBe(false)
+  })
+
+  it.each([
+    ['empty string', ''],
+    ['non-numeric string', 'abc'],
+    ['Infinity', Infinity],
+    ['null', null],
+  ])('treats %s as no data rather than storing a non-number', (_label, bad) => {
+    // A type="number" input reports unparseable content as '', and
+    // Number.isNaN('') is false — so a looser guard here would store a string
+    // where a number belongs and every downstream total would become NaN.
+    const food = buildUserFood(
+      { name: 'Apple', per100g: { protein: bad as unknown as number } },
+      'fixed-id',
+    )
+
+    expect(food.per100g.protein?.source).toBe('unknown')
+    expect(typeof food.per100g.protein?.value).toBe('number')
+    expect(Number.isFinite(food.per100g.protein?.value)).toBe(true)
   })
 
   it('covers every registry nutrient, so nothing is silently untracked', () => {
