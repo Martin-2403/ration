@@ -891,6 +891,12 @@ denominator, and anything where a plausible-looking wrong number would go unnoti
 ### Working rhythm
 
 - **One issue → one branch → one PR.** The issues are scoped for this.
+- **Keep the issue list honest.** A PR that finishes an issue says `Closes #N` in
+  its body, so merging closes it without anyone remembering to. A PR that only
+  moves an issue along leaves a comment saying what landed and what is left. An
+  issue list nobody prunes stops being a plan and becomes a graveyard — and the
+  first thing that rots is the difference between "not started" and "nearly done".
+- Do not close an issue to look productive. If nothing is finishable, say so.
 - **Never merge a diff that hasn't been read line by line.** A diff too big to hold
   in your head means the task was scoped too big — that is a scoping signal, not a
   reason to skim.
