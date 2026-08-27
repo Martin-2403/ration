@@ -36,6 +36,19 @@ db.version(1).stores({
 
 export { db }
 
+/**
+ * Strips Vue reactivity before a write.
+ *
+ * IndexedDB serialises with structured clone, which throws DataCloneError on a
+ * Proxy — and anything held in a ref or a store is one. `toRaw` only unwraps the
+ * top level, so a nested array like LogEntry.items would still fail. A JSON
+ * round-trip is safe here because every stored shape is plain JSON data by
+ * design; keep it that way (no Date, no Map, no class instances in §7's types).
+ */
+function plain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 export interface FoodRepository {
   get(id: string): Promise<Food | undefined>
   findByBarcode(barcode: string): Promise<Food | undefined>
@@ -65,7 +78,7 @@ export const foods: FoodRepository = {
   get: (id) => db.foods.get(id),
   findByBarcode: (barcode) => db.foods.where('barcode').equals(barcode).first(),
   async put(food) {
-    await db.foods.put(food)
+    await db.foods.put(plain(food))
   },
 }
 
@@ -73,7 +86,7 @@ export const mealTemplates: MealTemplateRepository = {
   list: () => db.mealTemplates.toArray(),
   get: (id) => db.mealTemplates.get(id),
   async put(template) {
-    await db.mealTemplates.put(template)
+    await db.mealTemplates.put(plain(template))
   },
   async remove(id) {
     await db.mealTemplates.delete(id)
@@ -85,11 +98,11 @@ export const log: LogRepository = {
   // merge is only correct if updatedAt is always the real write time.
   add(entry) {
     const at = Date.now()
-    return db.logEntries.add({ ...entry, createdAt: at, updatedAt: at })
+    return db.logEntries.add(plain({ ...entry, createdAt: at, updatedAt: at }))
   },
 
   async update(entry) {
-    await db.logEntries.put({ ...entry, updatedAt: Date.now() })
+    await db.logEntries.put(plain({ ...entry, updatedAt: Date.now() }))
   },
 
   async remove(id) {

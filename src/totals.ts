@@ -1,4 +1,10 @@
-import type { NutrientKey, NutrientMap, NutrientTotals, Source } from './data/nutrients'
+import type {
+  NutrientKey,
+  NutrientMap,
+  NutrientTotal,
+  NutrientTotals,
+  Source,
+} from './data/nutrients'
 
 /**
  * Scales nutrients for an entity by the given quantity.
@@ -90,4 +96,34 @@ export function sumTotals(maps: NutrientMap[]): NutrientTotals {
   }
 
   return totals
+}
+
+/**
+ * Combines already-summed totals — a day or a window built from several log
+ * entries (§7, §9). Distinct from sumTotals, which starts from NutrientMaps:
+ * once an entry is stored its totals are snapshots and must be added as they
+ * are, never recomputed from the food cache (§9).
+ *
+ * `missing` counts contributors that had no usable value for a nutrient. An
+ * entry that never mentions a nutrient at all adds nothing to that count —
+ * its totals carry no evidence either way, so inventing missing contributors
+ * from it would overstate the gap.
+ */
+export function mergeTotals(entries: NutrientTotals[]): NutrientTotals {
+  const merged: NutrientTotals = {}
+
+  for (const entry of entries) {
+    for (const [key, total] of Object.entries(entry) as [NutrientKey, NutrientTotal][]) {
+      const running = (merged[key] ??= { amount: 0, bySource: {}, missing: 0 })
+
+      running.amount += total.amount
+      running.missing += total.missing
+
+      for (const [source, amount] of Object.entries(total.bySource) as [Source, number][]) {
+        running.bySource[source] = (running.bySource[source] ?? 0) + amount
+      }
+    }
+  }
+
+  return merged
 }

@@ -3,6 +3,7 @@
 import 'fake-indexeddb/auto'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 
 import { db, foods, log, mealTemplates } from '../db'
 import type { NewLogEntry } from '../types'
@@ -137,5 +138,17 @@ describe('log repository', () => {
     await log.remove(id)
 
     expect(await log.get(id)).toBeUndefined()
+  })
+
+  it('accepts reactive input that structured clone would otherwise reject', async () => {
+    // Anything coming from a component or store is a Proxy, and IndexedDB
+    // serialises with structured clone, which throws DataCloneError on one.
+    // toRaw would not be enough either — items is a nested array. Removing
+    // plain() in db.ts breaks this test and nothing else.
+    const id = await log.add(reactive(entry(1000)))
+    const stored = await log.get(id)
+
+    expect(stored?.items).toHaveLength(1)
+    expect(stored?.totals.energy?.amount).toBe(185)
   })
 })

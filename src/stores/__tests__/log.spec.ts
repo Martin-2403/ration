@@ -1,0 +1,120 @@
+// Before db.ts constructs its Dexie instance.
+import 'fake-indexeddb/auto'
+
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { startOfLocalDay } from '../../dates'
+import { db } from '../../db'
+import type { NewLogEntry } from '../../types'
+import { useLogStore } from '../log'
+
+const entry = (timestamp: number, energy: number, name = 'Porridge'): NewLogEntry => ({
+  name,
+  timestamp,
+  items: [{ kind: 'food', foodId: 'oats', grams: 50 }],
+  totals: {
+    energy: { amount: energy, bySource: { 'off-packaging': energy }, missing: 0 },
+  },
+})
+
+const middayToday = () => startOfLocalDay() + 12 * 60 * 60 * 1000
+
+beforeEach(async () => {
+  await db.logEntries.clear()
+  setActivePinia(createPinia())
+})
+
+describe('log store', () => {
+  it('starts on today', () => {
+    const store = useLogStore()
+
+    expect(store.day).toBe(startOfLocalDay())
+    expect(store.isToday).toBe(true)
+  })
+
+  it('picks up an entry logged for today', async () => {
+    const store = useLogStore()
+    await store.logMeal(entry(middayToday(), 387))
+
+    // liveQuery pushes asynchronously, so wait for the subscription rather than
+    // refetching by hand.
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+    expect(store.entries[0]?.name).toBe('Porridge')
+  })
+
+  it('merges the day totals across entries', async () => {
+    const store = useLogStore()
+    await store.logMeal(entry(middayToday(), 387, 'Breakfast'))
+    await store.logMeal(entry(middayToday() + 1000, 600, 'Lunch'))
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(2))
+
+    expect(store.dayTotals.energy?.amount).toBe(987)
+    expect(store.dayTotals.energy?.bySource).toEqual({ 'off-packaging': 987 })
+  })
+
+  it('excludes an entry from another day', async () => {
+    const store = useLogStore()
+    await store.logMeal(entry(middayToday(), 387, 'today'))
+    await store.logMeal(entry(startOfLocalDay() - 60_000, 500, 'yesterday'))
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+    expect(store.entries[0]?.name).toBe('today')
+  })
+
+  it('follows the day when it is shifted', async () => {
+    const store = useLogStore()
+    const yesterdayMidday = startOfLocalDay() - 12 * 60 * 60 * 1000
+    await store.logMeal(entry(yesterdayMidday, 500, 'yesterday'))
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(0))
+
+    store.shiftDay(-1)
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+    expect(store.entries[0]?.name).toBe('yesterday')
+    expect(store.isToday).toBe(false)
+  })
+
+  it('normalises an arbitrary timestamp to local midnight', () => {
+    const store = useLogStore()
+    store.goToDay(new Date(2026, 0, 15, 17, 42).getTime())
+
+    expect(store.day).toBe(new Date(2026, 0, 15).getTime())
+  })
+
+  it('reflects a removal without a manual refetch', async () => {
+    const store = useLogStore()
+    const id = await store.logMeal(entry(middayToday(), 387))
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+    await store.removeEntry(id)
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(0))
+    expect(store.dayTotals).toEqual({})
+  })
+
+  it('reflects an edit and its new totals', async () => {
+    const store = useLogStore()
+    const id = await store.logMeal(entry(middayToday(), 387))
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+
+    await store.updateEntry({
+      ...store.entries[0]!,
+      id,
+      totals: { energy: { amount: 40, bySource: { user: 40 }, missing: 0 } },
+    })
+
+    await vi.waitFor(() => expect(store.dayTotals.energy?.amount).toBe(40))
+  })
+
+  it('has empty totals for a day with nothing logged', async () => {
+    const store = useLogStore()
+
+    await vi.waitFor(() => expect(store.loading).toBe(false))
+    expect(store.entries).toEqual([])
+    // Empty, not zeroed: no records is not the same as no intake (§9).
+    expect(store.dayTotals).toEqual({})
+  })
+})
