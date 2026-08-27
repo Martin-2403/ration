@@ -315,11 +315,52 @@ interface LogEntry {
   createdAt: number;
   updatedAt: number;          // write time; §10 merge resolves last-write-wins here
   items: LogItem[];
-  totals: NutrientMap;        // DENORMALIZED snapshot at log time (see §9)
+  totals: NutrientTotals;     // DENORMALIZED snapshot at log time (see §9)
 }
 ```
 
-Totals scale linearly from per-100g by `grams / 100` and sum across items.
+### Totals are not a NutrientMap
+
+A `NutrientMap` holds one `source` per value, which is right for a food: that value
+came from one place. A *sum* has many origins, and §9 promises to report what
+fraction of a total came from estimated values. One source tag cannot answer that,
+and recomputing it later would mean re-reading the food cache — which §9 forbids,
+because the cache changes and history must not.
+
+So a summed total carries the breakdown with it:
+
+```ts
+interface NutrientTotal {
+  amount: number;                            // sum of known contributions
+  bySource: Partial<Record<Source, number>>; // how much came from each source
+  missing: number;                           // contributors with no usable value
+}
+
+type NutrientTotals = Partial<Record<NutrientKey, NutrientTotal>>;
+```
+
+- `Σ bySource === amount`, always. That invariant is what makes §9's percentages
+  plain arithmetic on stored data.
+- **`'unknown'` never appears in `bySource`.** It is not an amount, it is an absence,
+  so it is counted in `missing` instead. A nutrient every contributor lacks still
+  gets an entry — `amount: 0, missing: n` — because "tracked but no data" and "not
+  tracked at all" must not look the same (§3).
+- `missing` counts *contributors*, not nutrients, so the UI can say "≥ 50 µg, 1 of 3
+  items has no data" rather than implying the sum is complete.
+
+### Scaling and summing
+
+Values scale linearly from per-100g by `grams / 100` for a food, and by dose count
+for a supplement (§8) — `nutrientsFor(entity, quantity)` resolves the quantity at the
+leaf, so there is one summing path.
+
+**No rounding on the way in.** The registry's `decimals` (§5) is a display concern;
+rounding at store would compound across a week of entries and cannot be undone. A
+nutrient displayed at 0 decimals would shed real intake at every meal.
+
+The arithmetic lives in a plain module (`src/totals.ts`), not in the composable:
+§17 makes it the most-tested code in the project, and it should be testable without
+mounting anything. `composables/useMeal.ts` holds only the reactive draft state.
 
 Slot ids are stable and never reused: a logged entry keeps its `slotId` even if the
 template is later edited or the slot removed, which is what makes history readable
@@ -418,8 +459,10 @@ Two independent quality axes, both surfaced, neither collapsed into the other:
 - A period *average* meeting the target is a weaker claim than hitting it daily —
   fine as a shortfall proxy, don't phrase it as the stronger claim.
 - Surface a **data-quality indicator** off the provenance: e.g. "Vitamin K: 55% of
-  RDI — 40% of that from estimated values." An `unknown` nutrient reads as "no
-  data," never a silent zero.
+  RDI — 40% of that from estimated values." That percentage comes from the stored
+  `bySource` breakdown on each total (§7), never from re-reading the food cache. An
+  `unknown` nutrient reads as "no data," never a silent zero, and a total with
+  `missing > 0` must not be presented as complete.
 - Unconfirmed scheduled doses (`schedule-assumed`, §8) are the weakest input in any
   total. Count them, but never let them read as measured.
 
@@ -711,10 +754,11 @@ src/
     ocr-terms.de.ts     // German label vocabulary -> nutrient keys
   db.ts                 // Dexie schema (behind a repository interface)
   units.ts              // canonical normalization (§6)
+  totals.ts             // scaling + summing, no Vue imports (§7)
   resolver.ts           // barcode -> NutrientMap tier walk (§4)
   router.ts             // one route per view (§2)
   composables/
-    useMeal.ts          // draft, slotNutrients, sum, totals
+    useMeal.ts          // reactive draft state only; math lives in totals.ts
   stores/
     log.ts              // Pinia + Dexie liveQuery
     config.ts           // tracked nutrients + targets
