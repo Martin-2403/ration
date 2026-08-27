@@ -928,3 +928,61 @@ merge commit, read by someone with no memory of the discussion.
 - comment complicated code explaining whys not just what
 - keep commit messages, pr messages clean, no AI reference, short explanatory message written from a dev POV
 
+---
+
+## 20. Candidate features (not scoped)
+
+Raised but not designed or committed. Distinct from **[deferred]** in §1, which is
+scoped work held back deliberately — nothing here has a layer or an owner yet.
+
+### Weekly intake graphs
+
+A visual read of the §9 evaluation: nutrient and energy intake over a rolling window
+against target. No new data — §9 already computes windows, targets, upper limits,
+`bySource` and coverage.
+
+If built:
+
+- **§15 governs, not a chart library's defaults.** Severity is bar length, two status
+  tones, over-limit is a bar past the target tick with a label. Colours must resolve
+  from CSS variables or dark mode breaks. Hand-rolled SVG is probably less work than
+  making a library obey this.
+- **Unlogged days must read as absent**, not as zero and not interpolated. A smooth
+  line drawn over partial data is §9's coverage rule broken in pixels.
+
+Follows layer 2, which produces the numbers it would draw.
+
+### Manual intake goals
+
+A user-set target overriding the reference table (§5). Small: `ReferenceTarget`
+already exists, so this adds a user-provided value layered over it — with its origin
+recorded, so the UI can say whether it is measuring against an authoritative NRV or
+against the user's own number.
+
+- The app never **computes** a recommended intake: no TDEE, no suggested deficit.
+  §5's rule holds — flag the number, do not prescribe.
+- Worth doing early: a user-set goal needs no external source, so the evaluation view
+  becomes usable before the §18 reference figures land.
+
+### Fitness app connectivity — exploration only
+
+Reading activity data or a calorie goal from Garmin Connect, Strava or similar.
+**Not designed. Explore before committing to anything.** Known obstacles, roughly in
+order of how much they hurt:
+
+- OAuth means holding a credential, which §10 rules out outright, and browser-origin
+  calls to these APIs are usually CORS-blocked — implying a server proxy. That turns
+  Ration into a client-server app and reverses §1's deferral of accounts and sync.
+  This applies to reads as much as writes.
+- A fitness app's calorie goal is an **expenditure or weight-management target, not a
+  reference intake**. Showing it beside NRV values would conflate two different
+  things, and it is only meaningful for energy — never for a micronutrient.
+- Such a goal **varies per day**, while §9 computes `target × daysLogged`. Per-day
+  targets are a model change, not a setting.
+- **[verify]** Garmin Connect has no open public API comparable to Strava's; access
+  runs through a developer programme with approval. Strava's is documented but covers
+  activity, not intake goals, and its token exchange needs a client secret.
+- **File import** — the user exports from the fitness app, Ration reads the file —
+  gets most of the value with no credential, no proxy, and no loss of offline-first.
+  Start here if this is ever picked up.
+
