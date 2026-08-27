@@ -62,6 +62,15 @@ describe('nutrientsFor', () => {
     expect(nutrientsFor(partial, 100).vitaminD?.source).toBe('unknown')
   })
 
+  it('passes an unknown value through unscaled', () => {
+    // Nonzero on purpose: with a 0 placeholder, scaling is invisible because
+    // 0 * anything is 0. An unknown is an absence, so nothing may multiply it
+    // into something that looks like data.
+    const placeholder = food({ vitaminD: { value: 7, source: 'unknown' } })
+
+    expect(nutrientsFor(placeholder, 500).vitaminD?.value).toBe(7)
+  })
+
   it('does not round to the display precision', () => {
     const odd = food({ protein: { value: 10, source: 'user' } })
 
