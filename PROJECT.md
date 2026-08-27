@@ -763,6 +763,10 @@ src/
   db.ts                 // Dexie schema + repository implementations (§2)
   units.ts              // canonical normalization (§6)
   totals.ts             // scaling + summing, no Vue imports (§7)
+  dates.ts              // local-midnight day boundaries (§9)
+  food-lookup.ts        // seeds, then store (§13)
+  user-food.ts          // hand-entered food -> Food tagged 'user' (§7)
+  nutrient-display.ts   // what the UI may claim about a total (§9, §15)
   resolver.ts           // barcode -> NutrientMap tier walk (§4)
   router.ts             // one route per view (§2)
   composables/
