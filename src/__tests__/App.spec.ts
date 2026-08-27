@@ -1,6 +1,11 @@
-import { describe, it, expect } from 'vitest'
+// The root route renders TodayView, which reads the log store, which opens
+// Dexie — so both need to exist before mounting.
+import 'fake-indexeddb/auto'
 
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
+import { describe, expect, it } from 'vitest'
+
 import App from '../App.vue'
 import router from '../router'
 
@@ -9,7 +14,7 @@ describe('App', () => {
     router.push('/')
     await router.isReady()
 
-    const wrapper = mount(App, { global: { plugins: [router] } })
+    const wrapper = mount(App, { global: { plugins: [router, createPinia()] } })
 
     // Mounting with the real router rather than stubbing RouterLink, so this
     // also catches a broken route table — the reason the shell exists at all.
