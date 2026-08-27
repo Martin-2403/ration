@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { startOfLocalDay } from '../../dates'
-import { db } from '../../db'
+import { db, foods } from '../../db'
 import type { NewLogEntry } from '../../types'
 import { useLogStore } from '../log'
 
@@ -21,7 +21,7 @@ const entry = (timestamp: number, energy: number, name = 'Porridge'): NewLogEntr
 const middayToday = () => startOfLocalDay() + 12 * 60 * 60 * 1000
 
 beforeEach(async () => {
-  await db.logEntries.clear()
+  await Promise.all([db.logEntries.clear(), db.foods.clear()])
   setActivePinia(createPinia())
 })
 
@@ -107,6 +107,38 @@ describe('log store', () => {
     })
 
     await vi.waitFor(() => expect(store.dayTotals.energy?.amount).toBe(40))
+  })
+
+  it('quick-logs a single food without a template', async () => {
+    const store = useLogStore()
+
+    await store.logFood(
+      {
+        id: 'apple',
+        name: 'Apple',
+        per100g: { energy: { value: 52, source: 'user' } },
+      },
+      150,
+    )
+
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+
+    const logged = store.entries[0]!
+    // §7's quick-log shape: no template, one item, no slot.
+    expect(logged.templateId).toBeUndefined()
+    expect(logged.items).toEqual([{ kind: 'food', foodId: 'apple', grams: 150 }])
+    expect(logged.items[0]).not.toHaveProperty('slotId')
+    expect(logged.totals.energy?.amount).toBeCloseTo(78, 6)
+  })
+
+  it('stores the food it quick-logs, so history stays resolvable', async () => {
+    const store = useLogStore()
+
+    await store.logFood({ id: 'apple', name: 'Apple', per100g: {} }, 100)
+
+    // A log entry pointing at an id that resolves to nothing would leave history
+    // unreadable, and §13 pins foods that have been logged.
+    expect((await foods.get('apple'))?.name).toBe('Apple')
   })
 
   it('has empty totals for a day with nothing logged', async () => {

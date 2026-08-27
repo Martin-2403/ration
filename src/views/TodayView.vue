@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import DaySummary from '../components/DaySummary.vue'
+import FoodForm from '../components/FoodForm.vue'
 import MealBuilder from '../components/MealBuilder.vue'
 import TodayLog from '../components/TodayLog.vue'
 import { SEED_TEMPLATES } from '../data/foods'
@@ -38,6 +39,8 @@ const heading = computed(() =>
     <DaySummary :totals="store.dayTotals" :loading="store.loading" />
 
     <MealBuilder v-for="template in SEED_TEMPLATES" :key="template.id" :template="template" />
+
+    <FoodForm @submit="store.logFood" />
 
     <TodayLog :entries="store.entries" @remove="store.removeEntry" />
   </div>

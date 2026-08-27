@@ -7,9 +7,9 @@ import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
 import { addLocalDays, nextLocalMidnight, startOfLocalDay } from '../dates'
-import { log } from '../db'
-import { mergeTotals } from '../totals'
-import type { LogEntry, NewLogEntry, StoredLogEntry } from '../types'
+import { foods, log } from '../db'
+import { mergeTotals, nutrientsFor, sumTotals } from '../totals'
+import type { Food, LogEntry, NewLogEntry, StoredLogEntry } from '../types'
 
 export const useLogStore = defineStore('log', () => {
   /** Local midnight of the day being shown (§9). */
@@ -61,6 +61,25 @@ export const useLogStore = defineStore('log', () => {
     return log.add(entry)
   }
 
+  /**
+   * Quick-log of a single food (§7): no template, one item, no slot. The food is
+   * stored first — a log entry referencing an id that resolves to nothing would
+   * leave history unreadable, and §13 relies on stored foods to pin what has
+   * been logged.
+   *
+   * The same path takes a barcode-resolved food when that lands (#15).
+   */
+  async function logFood(food: Food, grams: number) {
+    await foods.put(food)
+
+    return log.add({
+      name: food.name,
+      timestamp: Date.now(),
+      items: [{ kind: 'food', foodId: food.id, grams }],
+      totals: sumTotals([nutrientsFor(food, grams)]),
+    })
+  }
+
   /** Re-snapshotting is the caller's job; the repository bumps updatedAt (§7). */
   async function updateEntry(entry: StoredLogEntry) {
     await log.update(entry)
@@ -79,6 +98,7 @@ export const useLogStore = defineStore('log', () => {
     goToDay,
     shiftDay,
     logMeal,
+    logFood,
     updateEntry,
     removeEntry,
   }
