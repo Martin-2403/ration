@@ -8,6 +8,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 
 import { addLocalDays, nextLocalMidnight, startOfLocalDay } from '../dates'
 import { foods, log } from '../db'
+import { findFood } from '../food-lookup'
 import { mergeTotals, nutrientsFor, sumTotals } from '../totals'
 import type { Food, LogEntry, NewLogEntry, StoredLogEntry } from '../types'
 
@@ -80,9 +81,34 @@ export const useLogStore = defineStore('log', () => {
     })
   }
 
-  /** Re-snapshotting is the caller's job; the repository bumps updatedAt (§7). */
+  /** Writes an entry as given. Callers that changed items should use reviseEntry. */
   async function updateEntry(entry: StoredLogEntry) {
     await log.update(entry)
+  }
+
+  /**
+   * A user edit (§7): re-resolve each item and re-snapshot totals, rather than
+   * patching the stored numbers. Patching would let the totals drift out of
+   * agreement with the items they claim to describe.
+   *
+   * Note this does pull in current food data. §9 forbids *upstream* changes from
+   * rewriting history on their own, but an edit is the user asking for a rewrite
+   * — so if a food has been corrected since, the revised entry reflects that.
+   */
+  async function reviseEntry(entry: StoredLogEntry) {
+    const maps = await Promise.all(
+      entry.items.map(async (item) => {
+        // Supplements resolve per dose and arrive with §8; until then a
+        // supplement item contributes nothing rather than guessing.
+        if (item.kind !== 'food') return {}
+
+        const food = await findFood(item.foodId)
+
+        return food ? nutrientsFor(food, item.grams) : {}
+      }),
+    )
+
+    await log.update({ ...entry, totals: sumTotals(maps) })
   }
 
   async function removeEntry(id: number) {
@@ -100,6 +126,7 @@ export const useLogStore = defineStore('log', () => {
     logMeal,
     logFood,
     updateEntry,
+    reviseEntry,
     removeEntry,
   }
 })

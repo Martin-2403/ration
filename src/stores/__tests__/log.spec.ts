@@ -141,6 +141,67 @@ describe('log store', () => {
     expect((await foods.get('apple'))?.name).toBe('Apple')
   })
 
+  it('re-snapshots totals from the items when an entry is revised', async () => {
+    const store = useLogStore()
+    // logFood upserts the food, so the values have to come in through it —
+    // storing them separately first would just get overwritten.
+    const id = await store.logFood(
+      { id: 'apple', name: 'Apple', per100g: { energy: { value: 52, source: 'user' } } },
+      100,
+    )
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+
+    await store.reviseEntry({
+      ...store.entries[0]!,
+      id,
+      items: [{ kind: 'food', foodId: 'apple', grams: 200 }],
+    })
+
+    // Recomputed from the item, not patched: 52 per 100 g at 200 g.
+    await vi.waitFor(() => expect(store.entries[0]?.totals.energy?.amount).toBeCloseTo(104, 6))
+    expect(store.entries[0]?.items[0]).toMatchObject({ grams: 200 })
+  })
+
+  it('keeps createdAt and meal time when revising, but bumps updatedAt', async () => {
+    const store = useLogStore()
+    const id = await store.logFood({ id: 'apple', name: 'Apple', per100g: {} }, 100)
+    await vi.waitFor(() => expect(store.entries).toHaveLength(1))
+    const before = store.entries[0]!
+
+    await store.reviseEntry({
+      ...before,
+      id,
+      items: [{ kind: 'food', foodId: 'apple', grams: 150 }],
+    })
+
+    await vi.waitFor(() => expect(store.entries[0]?.items[0]).toMatchObject({ grams: 150 }))
+    const after = store.entries[0]!
+
+    expect(after.createdAt).toBe(before.createdAt)
+    expect(after.timestamp).toBe(before.timestamp)
+    expect(after.updatedAt).toBeGreaterThanOrEqual(before.updatedAt)
+  })
+
+  it('drops a nutrient to no data when its food no longer resolves', async () => {
+    const store = useLogStore()
+    const id = await store.logFood(
+      { id: 'gone', name: 'Gone', per100g: { energy: { value: 100, source: 'user' } } },
+      100,
+    )
+    await vi.waitFor(() => expect(store.entries[0]?.totals.energy?.amount).toBeCloseTo(100, 6))
+
+    // The food is deleted, then the entry is revised. Re-resolving finds nothing,
+    // so the revised total reports no data rather than keeping a stale number.
+    await db.foods.delete('gone')
+    await store.reviseEntry({
+      ...store.entries[0]!,
+      id,
+      items: [{ kind: 'food', foodId: 'gone', grams: 100 }],
+    })
+
+    await vi.waitFor(() => expect(store.entries[0]?.totals).toEqual({}))
+  })
+
   it('has empty totals for a day with nothing logged', async () => {
     const store = useLogStore()
 
