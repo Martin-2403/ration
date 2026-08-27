@@ -1,13 +1,21 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+
 import { formatAmount, hasNoData } from '../nutrient-display'
-import type { LogEntry } from '../types'
+import type { LogEntry, StoredLogEntry } from '../types'
+import EntryEditor from './EntryEditor.vue'
 
 const { entries } = defineProps<{ entries: LogEntry[] }>()
 
 const emit = defineEmits<{ remove: [id: number] }>()
 
+const editingId = ref<number | null>(null)
+
 const time = (ts: number) =>
   new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+
+/** Entries always have an id once stored; narrowing it keeps the editor honest. */
+const stored = (entry: LogEntry) => entry as StoredLogEntry
 </script>
 
 <template>
@@ -20,22 +28,37 @@ const time = (ts: number) =>
 
     <ul v-else>
       <li v-for="entry in entries" :key="entry.id">
-        <span class="time">{{ time(entry.timestamp) }}</span>
-        <span class="name">{{ entry.name }}</span>
-        <span class="kcal">
-          {{
-            entry.totals.energy && !hasNoData(entry.totals.energy)
-              ? `${formatAmount('energy', entry.totals.energy.amount)} kcal`
-              : 'No data'
-          }}
-        </span>
-        <button
-          type="button"
-          :aria-label="`Remove ${entry.name}`"
-          @click="emit('remove', entry.id!)"
-        >
-          Remove
-        </button>
+        <div class="summary">
+          <span class="time">{{ time(entry.timestamp) }}</span>
+          <span class="name">{{ entry.name }}</span>
+          <span class="kcal">
+            {{
+              entry.totals.energy && !hasNoData(entry.totals.energy)
+                ? `${formatAmount('energy', entry.totals.energy.amount)} kcal`
+                : 'No data'
+            }}
+          </span>
+          <button
+            type="button"
+            :aria-label="`Edit ${entry.name}`"
+            @click="editingId = editingId === entry.id ? null : entry.id!"
+          >
+            {{ editingId === entry.id ? 'Close' : 'Edit' }}
+          </button>
+          <button
+            type="button"
+            :aria-label="`Remove ${entry.name}`"
+            @click="emit('remove', entry.id!)"
+          >
+            Remove
+          </button>
+        </div>
+
+        <EntryEditor
+          v-if="editingId === entry.id"
+          :entry="stored(entry)"
+          @done="editingId = null"
+        />
       </li>
     </ul>
   </section>
@@ -70,12 +93,15 @@ ul {
 }
 
 li {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  align-items: center;
-  gap: var(--space-4);
   padding: var(--space-3) 0;
   border-top: 1px solid var(--line);
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .time,
