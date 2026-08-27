@@ -871,7 +871,6 @@ merge commit, read by someone with no memory of the discussion.
 - Describe the **durable change**, never the review-time state. "Spec-as-test for
   the nutrient registry" — not "(red until implemented)", "WIP", "part 2 of 3",
   "first attempt". Those stop being true on merge and mislead from then on.
-- Imperative mood: "Add the nutrient registry", not "Added" or "Adding".
 - Dependencies between PRs belong in the body ("depends on #24"), not the title.
 - The body explains **why**, and may record constraints that still hold. It should
   not narrate the review — a body saying "red on purpose, the file does not exist
