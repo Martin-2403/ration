@@ -862,6 +862,23 @@ Stop and ask rather than decide, whenever:
 State what you would do and why in a couple of lines, then wait. Conversely: do
 **not** ask about things this document already settles — read it first.
 
+### Naming commits and pull requests
+
+**Write the title for the history, not for the review.** A PR title and a commit
+subject outlive the review that produced them: they end up in `git log` and in the
+merge commit, read by someone with no memory of the discussion.
+
+- Describe the **durable change**, never the review-time state. "Spec-as-test for
+  the nutrient registry" — not "(red until implemented)", "WIP", "part 2 of 3",
+  "first attempt". Those stop being true on merge and mislead from then on.
+- Imperative mood: "Add the nutrient registry", not "Added" or "Adding".
+- Dependencies between PRs belong in the body ("depends on #24"), not the title.
+- The body explains **why**, and may record constraints that still hold. It should
+  not narrate the review — a body saying "red on purpose, the file does not exist
+  yet" is already wrong once the follow-up commit lands.
+- Reference sections and issues where they help a future reader (§9, #17), since
+  those stay resolvable.
+
 ### Code style
 
 - keep code simple and readable
