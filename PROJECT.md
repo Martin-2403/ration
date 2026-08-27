@@ -576,6 +576,13 @@ Two separate caches:
   with pinning:** never evict a food the user has actually logged. Guarantees
   offline re-scans and offline history always resolve.
 
+**Seed foods are not cache entries.** The starter foods and templates in
+`data/foods.ts` stay in the module and are never copied into IndexedDB. Storing
+them would make them evictable by the LRU above, and would freeze a wrong value
+on every install that had already copied it — a later fix in the app bundle would
+never reach those users. The cost is two lookup paths for a food id, seeds then
+store, which is one small function.
+
 ---
 
 ## 14. Region & language
@@ -752,7 +759,8 @@ src/
     foods.ts            // seed foods + meal templates
     rdi.ts              // targets + upper limits, data-driven (§5)
     ocr-terms.de.ts     // German label vocabulary -> nutrient keys
-  db.ts                 // Dexie schema (behind a repository interface)
+  types.ts              // domain types from §7 — no persistence imports
+  db.ts                 // Dexie schema + repository implementations (§2)
   units.ts              // canonical normalization (§6)
   totals.ts             // scaling + summing, no Vue imports (§7)
   resolver.ts           // barcode -> NutrientMap tier walk (§4)
@@ -860,7 +868,7 @@ by hand, and in this project they are short.
 
 **Owned by the human** — the shapes that everything downstream reads:
 
-- `data/nutrients.ts`, the registry (§5), and the type definitions in `db.ts`
+- `data/nutrients.ts`, the registry (§5), and the domain types in `types.ts`
 - anything touching provenance semantics (§3) or the `daysLogged` denominator and
   window math (§9) — the places where a wrong answer still looks plausible
 - the **[verify]** items in §18, categorically. They need authoritative sources, and
