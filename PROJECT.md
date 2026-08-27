@@ -883,5 +883,5 @@ merge commit, read by someone with no memory of the discussion.
 
 - keep code simple and readable
 - comment complicated code explaining whys not just what
-- keep commits clean, no AI reference, short explanatory commit message
+- keep commit messages, pr messages clean, no AI reference, short explanatory message written from a dev POV
 
