@@ -1,0 +1,135 @@
+/**
+ * Design tokens (§15) — the single source of truth for styling.
+ *
+ * Components reference these variables and never literal values. Only the
+ * palette changes between light and dark; type, motion, spacing and radii are
+ * scheme-independent, so they are declared once.
+ *
+ * This file declares variables only. Element defaults live in base.css, so
+ * that importing tokens never has a visual side effect on its own.
+ */
+
+:root {
+  /* ── Palette: light (the primary design) ─────────────────────────────── */
+  --bg: #f4f7f7; /* app background, near-neutral cool grey-green */
+  --surface: #ffffff; /* cards */
+  --ink: #14181a; /* near-black, slightly cool — not pure #000 */
+  --ink-soft: #5a6568; /* secondary text */
+  --line: #e5eaea; /* hairline borders / dividers */
+
+  --primary: #146c6a; /* petrol / deep teal — the one accent */
+  --primary-strong: #0e5250; /* hover / pressed — darker on light */
+  --primary-tint: #e4efee; /* selected fills, subtle backgrounds */
+  --accent-blue: #2f6690; /* secondary data hue, used sparingly */
+
+  /* macros — kept within the clinical family */
+  --macro-protein: #146c6a; /* petrol */
+  --macro-carbs: #2f6690; /* steel blue */
+  --macro-fat: #c88a2e; /* amber */
+
+  /* Status: two tones only. Severity is shown by BAR LENGTH, not extra
+     colours, and over-limit gets no third colour either — the bar runs past
+     the target tick and picks up an "over" label instead (§15). */
+  --status-ok: #146c6a; /* met / on-track */
+  --status-under: #b24a3f; /* below target (desaturated brick) */
+
+  /* ── Typography ──────────────────────────────────────────────────────── */
+
+  /* The variable build registers as "IBM Plex Sans Variable", NOT "IBM Plex
+     Sans". Using the shorter name silently falls back to system-ui and looks
+     almost right, which is worse than looking wrong. */
+  --font-sans: 'IBM Plex Sans Variable', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Sizes in rem so that a reader's browser font-size setting still scales
+     the UI. Values are the §15 scale at a 16px root. */
+  --text-display: 2rem; /* 32px — hero figures, page titles */
+  --text-section: 1.125rem; /* 18px — section headings */
+  --text-body: 0.9375rem; /* 15px — body, controls */
+  --text-caption: 0.75rem; /* 12px — eyebrows, field labels */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --leading-tight: 1.2; /* display and headings */
+  --leading-normal: 1.5; /* body copy */
+
+  --tracking-eyebrow: 0.06em; /* uppercase captions and field labels */
+
+  /* Dense number columns (RDI tables, nutrient lists) use Sans with tabular
+     lining figures rather than mono: columns align without mono's width and
+     weight, which get heavy across 20 rows. Mono earns attention by being
+     rare, so it is reserved for hero figures. */
+  --figures-tabular: 'tnum' 1, 'lnum' 1;
+
+  /* ── Spacing ─────────────────────────────────────────────────────────── */
+
+  /* §15 asks for "generous whitespace" without specifying a scale. A 4px base
+     is the conventional choice and every component will reach for it. */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.5rem; /* 24px */
+  --space-6: 2rem; /* 32px */
+  --space-7: 3rem; /* 48px */
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --radius-card: 12px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────── */
+  --motion-fast: 160ms; /* hover, selection */
+  --motion-slow: 220ms; /* state change, mount */
+  --ease: ease;
+  --ease-out: ease-out;
+
+  /* ── Focus ───────────────────────────────────────────────────────────── */
+  --focus-ring-color: var(--primary);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ── Elevation ───────────────────────────────────────────────────────── */
+
+  /* §15 prefers hairline borders to shadows; where a shadow is needed it stays
+     soft and low. One token, deliberately, so it cannot escalate. */
+  --shadow-low: 0 1px 2px rgb(20 24 26 / 6%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1214; /* deep cool near-black, not pure #000 */
+    --surface: #171c1e; /* raised card — lift by surface, not by shadow */
+    --ink: #e8eded;
+    --ink-soft: #9aa5a8;
+    --line: #262d2f; /* hairline still reads as a hairline */
+
+    /* Petrol lightens on dark: #146C6A against --bg is far too low-contrast. */
+    --primary: #3e9d99;
+    --primary-strong: #5cb8b4; /* hover / pressed — LIGHTER on dark */
+    --primary-tint: #16302f;
+    --accent-blue: #6098c4;
+
+    --macro-protein: #3e9d99;
+    --macro-carbs: #6098c4;
+    --macro-fat: #d9a44f;
+
+    --status-ok: #3e9d99;
+    --status-under: #d4736a;
+
+    /* Shadows read as murk on a dark field; depth comes from --surface. */
+    --shadow-low: none;
+  }
+}
+
+/* Reduced motion is an accessibility requirement, not a preference (§15).
+   Durations collapse to a near-zero value rather than 0 so that any
+   transitionend listener still fires. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 1ms;
+    --motion-slow: 1ms;
+  }
+}
