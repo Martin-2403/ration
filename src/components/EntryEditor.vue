@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import { findFoods } from '../food-lookup'
 import { formatAmount } from '../nutrient-display'
+import { parseAmount } from '../parse-amount'
 import { useLogStore } from '../stores/log'
 import { nutrientsFor, sumTotals } from '../totals'
 import type { Food, StoredLogEntry } from '../types'
@@ -14,9 +15,13 @@ const store = useLogStore()
 
 const foods = ref(new Map<string, Food>())
 
-/** Grams per item, index-aligned with entry.items. */
-const grams = ref<(number | '' | null)[]>(
-  entry.items.map((item) => (item.kind === 'food' ? item.grams : 0)),
+/**
+ * What the user has typed, per item, index-aligned with entry.items. Raw
+ * strings, because the fields are text inputs and we do the parsing (see
+ * parse-amount.ts for why a number input is not used here).
+ */
+const grams = ref<string[]>(
+  entry.items.map((item) => (item.kind === 'food' ? String(item.grams) : '')),
 )
 
 onMounted(async () => {
@@ -36,20 +41,41 @@ const rows = computed(() =>
   })),
 )
 
-const isUsable = (value: number | '' | null) =>
-  typeof value === 'number' && Number.isFinite(value) && value > 0
+/**
+ * Parsed amounts, index-aligned with entry.items. `undefined` for a row that has
+ * no field of its own — a supplement dose is not editable here yet (§8), so it
+ * cannot be the reason a save is blocked either.
+ */
+const parsed = computed(() =>
+  entry.items.map((item, index) =>
+    item.kind === 'food' ? parseAmount(grams.value[index] ?? '') : undefined,
+  ),
+)
 
-const canSave = computed(() => grams.value.every(isUsable))
+/** Rows holding something that is not a number at all, named for the message. */
+const notNumeric = computed(() =>
+  rows.value
+    .filter((row) => parsed.value[row.index]?.kind === 'not-a-number')
+    .map((row) => row.label),
+)
+
+// An amount eaten has no meaningful blank, unlike a nutrient value: an item with
+// no quantity contributes nothing and should be removed instead of zeroed.
+const canSave = computed(() =>
+  parsed.value.every((amount) => !amount || (amount.kind === 'number' && amount.value > 0)),
+)
 
 /** Preview of what saving would store, so the change is visible before it lands. */
 const preview = computed(() => {
   if (!canSave.value) return undefined
 
   const maps = entry.items.map((item, index) => {
-    if (item.kind !== 'food') return {}
+    const amount = parsed.value[index]
+    if (item.kind !== 'food' || amount?.kind !== 'number') return {}
+
     const food = foods.value.get(item.foodId)
 
-    return food ? nutrientsFor(food, grams.value[index] as number) : {}
+    return food ? nutrientsFor(food, amount.value) : {}
   })
 
   return sumTotals(maps).energy
@@ -60,9 +86,13 @@ async function save() {
 
   await store.reviseEntry({
     ...entry,
-    items: entry.items.map((item, index) =>
-      item.kind === 'food' ? { ...item, grams: grams.value[index] as number } : item,
-    ),
+    items: entry.items.map((item, index) => {
+      const amount = parsed.value[index]
+
+      return item.kind === 'food' && amount?.kind === 'number'
+        ? { ...item, grams: amount.value }
+        : item
+    }),
   })
 
   emit('done')
@@ -74,12 +104,15 @@ async function save() {
     <div v-for="row in rows" :key="row.index" class="row">
       <span class="label">{{ row.label }}</span>
       <span v-if="row.editable" class="amount">
+        <!-- text, not number: see parse-amount.ts. inputmode keeps the numeric
+             keypad on a phone, and a decimal comma survives. -->
         <input
-          v-model.number="grams[row.index]"
-          type="number"
-          min="0"
-          step="any"
+          v-model="grams[row.index]"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
           :aria-label="`Grams of ${row.label}`"
+          :aria-invalid="parsed[row.index]?.kind === 'not-a-number' || undefined"
         />
         g
       </span>
@@ -89,6 +122,10 @@ async function save() {
     <div class="footer">
       <span v-if="preview" class="preview">
         {{ formatAmount('energy', preview.amount) }} kcal
+      </span>
+      <!-- A blocked save always says what is wrong, and which row when it can. -->
+      <span v-else-if="notNumeric.length > 0" class="problem" role="status">
+        Not a number: {{ notNumeric.join(', ') }}
       </span>
       <span v-else class="problem">Amounts must be positive numbers</span>
 
@@ -125,6 +162,12 @@ input {
   border-radius: var(--radius-control);
   padding: var(--space-1) var(--space-2);
   font-feature-settings: var(--figures-tabular);
+}
+
+/* Supplements the message rather than replacing it — colour never carries the
+   meaning on its own (§15). */
+input[aria-invalid='true'] {
+  border-color: var(--status-under);
 }
 
 .amount {

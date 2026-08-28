@@ -64,6 +64,28 @@ describe('EntryEditor', () => {
     expect(wrapper.text()).toContain('must be positive numbers')
   })
 
+  it('accepts a decimal comma, which is the German separator', async () => {
+    const wrapper = await render(entry(100))
+    await wrapper.find('input').setValue('12,5')
+    await wrapper.find('button:last-of-type').trigger('click')
+    await flushPromises()
+
+    // The bug this replaces: a number input reported '12,5' as the empty string,
+    // so the amount silently became no data (§14).
+    expect((await db.logEntries.get(1))?.items[0]).toMatchObject({ grams: 12.5 })
+  })
+
+  it('refuses text that is not a number and names the row', async () => {
+    const wrapper = await render()
+    await wrapper.find('input').setValue('12g')
+
+    expect(wrapper.find('button:last-of-type').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Not a number: Apple')
+    // Marked on the field too, so the problem is findable without reading the
+    // footer — and by text, not colour alone (§15).
+    expect(wrapper.find('input').attributes('aria-invalid')).toBe('true')
+  })
+
   it('refuses a cleared amount', async () => {
     const wrapper = await render()
     await wrapper.find('input').setValue('')
