@@ -13,5 +13,7 @@ import type { NutrientKey } from './nutrients'
 export const NUTRIENT_LABELS: Record<NutrientKey, string> = {
   energy: 'Energy',
   protein: 'Protein',
+  carbohydrate: 'Carbohydrate',
+  fat: 'Fat',
   vitaminD: 'Vitamin D',
 }

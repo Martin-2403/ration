@@ -34,6 +34,11 @@ export interface NutrientDef {
 export const NUTRIENTS = {
   energy: { unit: 'kcal', kind: 'macro', decimals: 0 },
   protein: { unit: 'g', kind: 'macro', decimals: 1 },
+  // "carbohydrate" and "fat", singular: the keys end up in stored records and
+  // i18n keys, and Regulation 1169/2011 Annex XIII words them that way, so the
+  // NRV figures (#16) will drop straight onto them.
+  carbohydrate: { unit: 'g', kind: 'macro', decimals: 1 },
+  fat: { unit: 'g', kind: 'macro', decimals: 1 },
   vitaminD: { unit: 'µg', kind: 'micro', decimals: 1 },
   // ... one entry per nutrient the app can ever track
 } as const satisfies Record<string, NutrientDef>
@@ -62,5 +67,57 @@ export interface ReferenceTarget {
   target: number // per day, in the nutrient's canonical unit
   // Tolerable upper intake, same unit. Absent means no limit is known for this
   // nutrient — never infer one (§5).
+  upperLimit?: number
+}
+
+/**
+ * The nutrients a user may set their own daily target for (§20).
+ *
+ * Listed explicitly rather than derived from `kind: 'macro'`, because whether a
+ * self-chosen number is safe is a per-nutrient judgement and not a category
+ * one. Energy and the three macros are a diet question. A micronutrient is a
+ * toxicity question — the tolerable upper intakes exist for a reason, and they
+ * vary from generous (B12) to narrow (selenium). Deriving the set from `kind`
+ * would also make a future macro-shaped entry with a real ceiling — salt — user
+ * settable the moment it is added to the registry, silently.
+ */
+export const USER_GOAL_NUTRIENTS = [
+  'energy',
+  'protein',
+  'carbohydrate',
+  'fat',
+] as const satisfies readonly NutrientKey[]
+
+export type GoalNutrientKey = (typeof USER_GOAL_NUTRIENTS)[number]
+
+export function isGoalNutrient(key: NutrientKey): key is GoalNutrientKey {
+  return (USER_GOAL_NUTRIENTS as readonly NutrientKey[]).includes(key)
+}
+
+/** A daily target the user set themselves, overriding the reference table (§5). */
+export interface UserGoal {
+  nutrient: GoalNutrientKey
+  target: number // per day, in the nutrient's canonical unit
+  updatedAt: number // write time; §10's merge resolves last-write-wins on this
+}
+
+/** A goal before it is stored: the repository stamps updatedAt. */
+export type NewUserGoal = Omit<UserGoal, 'updatedAt'>
+
+/**
+ * What intake is measured against, carrying where the number came from — the
+ * same provenance discipline the intake side follows (§3). The evaluation view
+ * can then say whether it is comparing against an authoritative NRV or against
+ * the user's own figure.
+ */
+export interface ResolvedTarget {
+  nutrient: NutrientKey
+  target: number
+  origin: 'user' | 'reference'
+  /**
+   * Tolerable upper intake, same unit. Always from the reference table, never
+   * from a user goal: a ceiling is a safety figure, not a preference. Absent
+   * means no limit is known — never infer one (§5).
+   */
   upperLimit?: number
 }

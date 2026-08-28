@@ -47,7 +47,13 @@ describe('buildUserFood', () => {
   it('covers every registry nutrient, so nothing is silently untracked', () => {
     const food = buildUserFood({ name: 'Apple', per100g: {} }, 'fixed-id')
 
-    expect(Object.keys(food.per100g).sort()).toEqual(['energy', 'protein', 'vitaminD'])
+    expect(Object.keys(food.per100g).sort()).toEqual([
+      'carbohydrate',
+      'energy',
+      'fat',
+      'protein',
+      'vitaminD',
+    ])
   })
 
   it('accepts an explicit zero as a real value', () => {

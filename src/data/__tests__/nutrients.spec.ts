@@ -32,7 +32,7 @@
  */
 import { describe, it, expect } from 'vitest'
 
-import { NUTRIENTS } from '../nutrients'
+import { isGoalNutrient, NUTRIENTS, USER_GOAL_NUTRIENTS } from '../nutrients'
 
 // §6: one canonical unit per nutrient. This list *is* the contract — if a new
 // unit is genuinely needed, it goes in §6 first, then here. Keeping it in the
@@ -104,9 +104,41 @@ describe('nutrient registry', () => {
     expect(key).toMatch(/^[a-z][a-zA-Z0-9]*$/)
   })
 
-  // Left as a todo rather than a test because naming these is your call, not
-  // mine: §15 refers to protein, carbs and fat as macros, but the exact keys
-  // ("carbs" vs "carbohydrates") are a decision the registry makes. Replace
-  // this with a real assertion once you have picked them.
-  it.todo('includes protein, carbohydrate and fat as macros')
+  // The keys were the registry's call to make; these are the ones it picked,
+  // singular and matching Regulation 1169/2011 Annex XIII so the NRV figures
+  // (#16) land on them without a mapping. Asserted here because they are now
+  // stored in goal rows and in every logged total — renaming one is a migration,
+  // not a refactor.
+  it.each(['energy', 'protein', 'carbohydrate', 'fat'])('includes %s as a macro', (key) => {
+    const found = cases.find((c) => c.key === key)
+
+    expect(found, `the registry must define "${key}"`).toBeDefined()
+    expect(found?.def.kind).toBe('macro')
+  })
+})
+
+/**
+ * §20's manual goals: the user may set their own target for some nutrients and
+ * not others. The list is a safety boundary, so it gets asserted rather than
+ * trusted — the failure mode is a micronutrient quietly becoming self-settable.
+ */
+describe('user-settable goals', () => {
+  it('only lists nutrients the registry defines', () => {
+    for (const key of USER_GOAL_NUTRIENTS) {
+      expect(NUTRIENTS, `${key} is not in the registry`).toHaveProperty(key)
+    }
+  })
+
+  it('excludes every micronutrient', () => {
+    for (const key of USER_GOAL_NUTRIENTS) {
+      // A self-chosen macro target is a diet question. A self-chosen
+      // micronutrient target is a dosing one, which §5 keeps out of the app.
+      expect(NUTRIENTS[key].kind, `${key} is a micronutrient`).toBe('macro')
+    }
+  })
+
+  it('accepts a goal nutrient and rejects anything else', () => {
+    expect(isGoalNutrient('energy')).toBe(true)
+    expect(isGoalNutrient('vitaminD')).toBe(false)
+  })
 })
