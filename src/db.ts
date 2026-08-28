@@ -3,9 +3,9 @@
  * the repository interfaces below, so the storage layer can change without
  * touching views.
  *
- * Only the entities that exist today get tables. Supplements, schedules, config
- * and lab results arrive in their own layers behind a version bump; Dexie adds
- * tables and indexes without losing data.
+ * Only the entities that exist today get tables. Supplements, schedules and lab
+ * results arrive in their own layers behind a version bump; Dexie adds tables
+ * and indexes without losing data.
  *
  * Seed foods are NOT stored here. They ship in data/foods.ts and stay in the
  * module (§13): storing them would make them evictable by the LRU and would
@@ -13,6 +13,12 @@
  */
 import Dexie, { type EntityTable } from 'dexie'
 
+import {
+  isGoalNutrient,
+  type GoalNutrientKey,
+  type NewUserGoal,
+  type UserGoal,
+} from './data/nutrients'
 import type { Food, LogEntry, MealTemplate, NewLogEntry, StoredLogEntry } from './types'
 
 const db = new Dexie('ration') as Dexie & {
@@ -22,6 +28,7 @@ const db = new Dexie('ration') as Dexie & {
   // here would make Dexie infer add() as returning `number | undefined`,
   // because LogEntry.id is optional for entries that have not been saved yet.
   logEntries: EntityTable<StoredLogEntry, 'id'>
+  nutrientGoals: EntityTable<UserGoal, 'nutrient'>
 }
 
 db.version(1).stores({
@@ -32,6 +39,15 @@ db.version(1).stores({
   // timestamp drives day and rolling-window queries (§9); updatedAt drives the
   // last-write-wins merge on restore (§10).
   logEntries: '++id, timestamp, updatedAt',
+})
+
+// Only the added table is listed: Dexie carries the earlier version's schema
+// forward, so an upgrade adds this store and leaves existing data alone.
+db.version(2).stores({
+  // Keyed by nutrient id, one row per goal. A single settings row would turn
+  // clearing one goal into a read-modify-write over all of them, and two tabs
+  // saving at once would drop a write; a delete of one row cannot.
+  nutrientGoals: 'nutrient',
 })
 
 export { db }
@@ -74,6 +90,14 @@ export interface LogRepository {
   between(from: number, to: number): Promise<LogEntry[]>
 }
 
+export interface NutrientGoalRepository {
+  list(): Promise<UserGoal[]>
+  get(nutrient: GoalNutrientKey): Promise<UserGoal | undefined>
+  /** Upsert. Stamps updatedAt, and rejects anything the app must not store. */
+  put(goal: NewUserGoal): Promise<void>
+  remove(nutrient: GoalNutrientKey): Promise<void>
+}
+
 export const foods: FoodRepository = {
   get: (id) => db.foods.get(id),
   findByBarcode: (barcode) => db.foods.where('barcode').equals(barcode).first(),
@@ -113,4 +137,30 @@ export const log: LogRepository = {
 
   between: (from, to) =>
     db.logEntries.where('timestamp').between(from, to, true, false).sortBy('timestamp'),
+}
+
+export const nutrientGoals: NutrientGoalRepository = {
+  list: () => db.nutrientGoals.toArray(),
+
+  get: (nutrient) => db.nutrientGoals.get(nutrient),
+
+  // Both checks guard the write boundary, which is where a restored backup or an
+  // older build's data would arrive (§10). A target of zero or below is not a
+  // goal the evaluation can say anything useful about, and a micronutrient goal
+  // is deliberately not offered at all (§20).
+  async put(goal) {
+    if (!isGoalNutrient(goal.nutrient)) {
+      throw new Error(`${goal.nutrient} is not a nutrient the user may set a goal for`)
+    }
+
+    if (!Number.isFinite(goal.target) || goal.target <= 0) {
+      throw new RangeError(`a goal target must be a positive number, got ${goal.target}`)
+    }
+
+    await db.nutrientGoals.put(plain({ ...goal, updatedAt: Date.now() }))
+  },
+
+  async remove(nutrient) {
+    await db.nutrientGoals.delete(nutrient)
+  },
 }
