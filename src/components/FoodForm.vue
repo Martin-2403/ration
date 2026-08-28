@@ -90,7 +90,14 @@ function submit() {
   <details class="card">
     <summary>Add a food by hand</summary>
 
-    <form @submit.prevent="submit">
+    <!--
+      novalidate on purpose. The browser's own constraint validation is a second,
+      invisible gate: it can refuse to submit while the button still looks
+      enabled, which is how a `step` attribute silently blocked every amount that
+      was not a multiple of it. This component does its own validation and states
+      its own reasons, so an enabled button must always mean the submit runs.
+    -->
+    <form novalidate @submit.prevent="submit">
       <!-- Saying this explicitly matters: a blank field becoming a zero is the
            mistake §3 exists to prevent, and the user is the one supplying the
            gap here. -->
@@ -112,7 +119,7 @@ function submit() {
             v-model.number="grams"
             type="number"
             min="0"
-            step="5"
+            step="any"
             @input="trackValidity('grams', $event)"
           />
           g

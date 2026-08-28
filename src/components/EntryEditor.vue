@@ -78,7 +78,7 @@ async function save() {
           v-model.number="grams[row.index]"
           type="number"
           min="0"
-          step="5"
+          step="any"
           :aria-label="`Grams of ${row.label}`"
         />
         g
