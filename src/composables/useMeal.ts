@@ -8,6 +8,7 @@ import { computed, ref, type Ref } from 'vue'
 
 import type { NutrientMap, NutrientTotals } from '../data/nutrients'
 import { findFoods } from '../food-lookup'
+import { parseAmount, type ParsedAmount } from '../parse-amount'
 import { nutrientsFor, sumTotals } from '../totals'
 import type { Food, LogItem, MealTemplate, NewLogEntry } from '../types'
 
@@ -18,7 +19,13 @@ export interface DraftSlot {
   /** Food ids the user may pick from. Length 1 means fixed (§7). */
   options: string[]
   foodId: string
-  grams: number
+  /**
+   * What the user has typed, not a number: the field is a text input and we do
+   * the parsing (see parse-amount.ts). Holding a number here would mean the
+   * control decided what counts as one, which is how a decimal comma became a
+   * blank field (§14). `amounts` below is the parsed view.
+   */
+  gramsInput: string
 }
 
 export interface MealDraft {
@@ -26,13 +33,25 @@ export interface MealDraft {
   foods: Ref<Map<string, Food>>
   /** False until the option foods have been resolved. */
   ready: Ref<boolean>
+  /** Each slot's typed amount, parsed. Index-aligned with `slots`. */
+  amounts: Ref<ParsedAmount[]>
+  /** Slot labels whose amount is not a usable positive number. */
+  unusable: Ref<string[]>
+  /** True when the foods have loaded and every amount is a positive number. */
+  canLog: Ref<boolean>
   /** Scaled nutrients per slot, index-aligned with `slots`. */
   slotNutrients: Ref<NutrientMap[]>
   totals: Ref<NutrientTotals>
-  items: Ref<LogItem[]>
+  /** The draft as log items, or undefined while any amount is unusable. */
+  items: Ref<LogItem[] | undefined>
   load: () => Promise<void>
   reset: () => void
   toEntry: (timestamp?: number) => NewLogEntry
+}
+
+/** An amount that can actually be logged: a number, and more than nothing. */
+function usableAmount(parsed: ParsedAmount | undefined): number | undefined {
+  return parsed?.kind === 'number' && parsed.value > 0 ? parsed.value : undefined
 }
 
 export function useMeal(template: MealTemplate): MealDraft {
@@ -42,7 +61,7 @@ export function useMeal(template: MealTemplate): MealDraft {
       label: slot.label,
       options: [...slot.options],
       foodId: slot.defaultOptionId,
-      grams: slot.defaultGrams,
+      gramsInput: String(slot.defaultGrams),
     }))
 
   const slots = ref<DraftSlot[]>(initial())
@@ -60,39 +79,78 @@ export function useMeal(template: MealTemplate): MealDraft {
     slots.value = initial()
   }
 
-  const slotNutrients = computed<NutrientMap[]>(() =>
-    slots.value.map((slot) => {
-      const food = foods.value.get(slot.foodId)
+  const amounts = computed<ParsedAmount[]>(() =>
+    slots.value.map((slot) => parseAmount(slot.gramsInput)),
+  )
 
-      // An unresolved food contributes nothing rather than throwing. Before
-      // `ready`, that is a loading state, not a data gap — which is why totals
-      // below stay empty until then instead of reporting everything as missing.
-      return food ? nutrientsFor(food, slot.grams) : {}
+  const unusable = computed(() =>
+    slots.value
+      .filter((_, index) => usableAmount(amounts.value[index]) === undefined)
+      .map((slot) => slot.label),
+  )
+
+  const canLog = computed(() => ready.value && unusable.value.length === 0)
+
+  const slotNutrients = computed<NutrientMap[]>(() =>
+    slots.value.map((slot, index) => {
+      const food = foods.value.get(slot.foodId)
+      const grams = usableAmount(amounts.value[index])
+
+      // An unresolved food or an amount that is not yet a number contributes
+      // nothing rather than throwing or scaling by NaN. Before `ready`, that is a
+      // loading state, not a data gap — which is why totals below stay empty
+      // until then instead of reporting everything as missing.
+      return food && grams !== undefined ? nutrientsFor(food, grams) : {}
     }),
   )
 
   const totals = computed<NutrientTotals>(() => (ready.value ? sumTotals(slotNutrients.value) : {}))
 
-  const items = computed<LogItem[]>(() =>
-    slots.value.map((slot) => ({
+  const items = computed<LogItem[] | undefined>(() => {
+    const grams = slots.value.map((_, index) => usableAmount(amounts.value[index]))
+
+    // Undefined rather than substituting a zero for the slot in question: a zero
+    // would be stored as an amount the user said they ate (§3).
+    if (grams.some((value) => value === undefined)) return undefined
+
+    return slots.value.map((slot, index) => ({
       kind: 'food' as const,
       slotId: slot.slotId,
       foodId: slot.foodId,
-      grams: slot.grams,
-    })),
-  )
+      grams: grams[index]!,
+    }))
+  })
 
   function toEntry(timestamp = Date.now()): NewLogEntry {
+    const logItems = items.value
+
+    // Callers gate on canLog — the log button is disabled otherwise. Throwing
+    // beats logging a guessed amount if one ever slips through.
+    if (!logItems) throw new Error('a slot has no usable amount')
+
     return {
       templateId: template.id,
       name: template.name,
       timestamp,
-      items: items.value,
+      items: logItems,
       // Denormalized on purpose: the entry keeps the values as resolved now, and
       // later upstream changes must not rewrite it (§9).
       totals: totals.value,
     }
   }
 
-  return { slots, foods, ready, slotNutrients, totals, items, load, reset, toEntry }
+  return {
+    slots,
+    foods,
+    ready,
+    amounts,
+    unusable,
+    canLog,
+    slotNutrients,
+    totals,
+    items,
+    load,
+    reset,
+    toEntry,
+  }
 }
