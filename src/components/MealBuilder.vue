@@ -45,7 +45,7 @@ async function logMeal() {
           v-model.number="slot.grams"
           type="number"
           min="0"
-          step="5"
+          step="any"
           :aria-label="`Grams of ${slot.label}`"
         />
         g

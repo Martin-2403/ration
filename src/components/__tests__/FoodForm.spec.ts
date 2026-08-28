@@ -117,6 +117,24 @@ describe('FoodForm', () => {
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
 
+  it('accepts an amount that is not a round number', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '123', energy: '52' })
+
+    // A step of 5 made every non-multiple natively invalid, so the browser
+    // refused the submit while the button still looked enabled. Nothing in the
+    // app could see it, because triggering submit in a test bypasses native
+    // validation entirely — hence the attribute assertions below.
+    const grams = wrapper.find('#food-grams')
+    expect(grams.attributes('step')).toBe('any')
+    expect(wrapper.find('form').attributes('novalidate')).toBeDefined()
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('form').trigger('submit')
+    const [, emittedGrams] = wrapper.emitted('submit')![0] as [unknown, number]
+    expect(emittedGrams).toBe(123)
+  })
+
   it('offers an input for every tracked nutrient', () => {
     const wrapper = mount(FoodForm)
 
