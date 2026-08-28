@@ -135,6 +135,65 @@ describe('FoodForm', () => {
     expect(emittedGrams).toBe(123)
   })
 
+  /**
+   * jsdom never sets badInput, so it is faked. That is the only way to cover
+   * this at all, and the case is worth covering: a number field can hold text
+   * the browser cannot parse while reporting its value as '', and the typed
+   * character stays visible.
+   */
+  const fakeBadInput = (wrapper: ReturnType<typeof mount>, selector: string) => {
+    const el = wrapper.find(selector).element as HTMLInputElement
+    Object.defineProperty(el, 'validity', {
+      configurable: true,
+      value: { badInput: true },
+    })
+  }
+
+  it('blocks submit when a field holds text the browser cannot parse', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    fakeBadInput(wrapper, '#food-energy')
+
+    // Blur, not input: a keystroke leaving the parsed value unchanged ('' before,
+    // '' after) may fire no input event at all, so blur is what catches it when
+    // the user clicks away.
+    await wrapper.find('#food-energy').trigger('blur')
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('not a number')
+  })
+
+  it('refuses to submit unparseable text even if no event ever reported it', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+
+    // No input and no blur — the state the component was never told about.
+    fakeBadInput(wrapper, '#food-energy')
+    await wrapper.find('form').trigger('submit')
+
+    // submit() re-reads the DOM, so nothing is emitted and the reason appears.
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.text()).toContain('not a number')
+  })
+
+  it('clears the problem once the field parses again', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    fakeBadInput(wrapper, '#food-energy')
+    await wrapper.find('#food-energy').trigger('blur')
+
+    // Restore a real validity object, as retyping a valid number would.
+    const el = wrapper.find('#food-energy').element as HTMLInputElement
+    Object.defineProperty(el, 'validity', {
+      configurable: true,
+      value: { badInput: false },
+    })
+    await wrapper.find('#food-energy').setValue('52')
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('not a number')
+  })
+
   it('offers an input for every tracked nutrient', () => {
     const wrapper = mount(FoodForm)
 

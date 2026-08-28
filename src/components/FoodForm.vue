@@ -38,6 +38,8 @@ const isUsableAmount = (value: FieldValue) =>
  */
 const badFields = ref(new Set<string>())
 
+const formEl = ref<HTMLFormElement | null>(null)
+
 function trackValidity(field: string, event: Event) {
   const input = event.target as HTMLInputElement
   const next = new Set(badFields.value)
@@ -46,6 +48,30 @@ function trackValidity(field: string, event: Event) {
   else next.delete(field)
 
   badFields.value = next
+}
+
+/**
+ * Re-reads every number field straight from the DOM.
+ *
+ * Tracking on `input` alone is not enough: a keystroke that leaves the parsed
+ * value unchanged — `''` before and `''` after — may not fire `input` at all,
+ * while still leaving the typed character visible in the field. The tracking
+ * then never runs and the form looks submittable with garbage on screen.
+ *
+ * So this also runs on blur, and again before submitting, where it is the last
+ * line of defence rather than an optimisation.
+ */
+function refreshValidity(): boolean {
+  const inputs = formEl.value?.querySelectorAll<HTMLInputElement>('input[type="number"]') ?? []
+  const next = new Set<string>()
+
+  for (const input of inputs) {
+    if (input.validity.badInput) next.add(input.id.replace(/^food-/, ''))
+  }
+
+  badFields.value = next
+
+  return next.size === 0
 }
 
 const canSubmit = computed(() => {
@@ -67,6 +93,9 @@ const hasNegative = computed(() =>
 )
 
 function submit() {
+  // Read the DOM before trusting the model: a field can hold unparseable text
+  // that never reached us through an event.
+  if (!refreshValidity()) return
   if (!canSubmit.value) return
 
   // Drop blanks rather than passing '' through: buildUserFood records an absent
@@ -97,7 +126,7 @@ function submit() {
       was not a multiple of it. This component does its own validation and states
       its own reasons, so an enabled button must always mean the submit runs.
     -->
-    <form novalidate @submit.prevent="submit">
+    <form ref="formEl" novalidate @submit.prevent="submit">
       <!-- Saying this explicitly matters: a blank field becoming a zero is the
            mistake §3 exists to prevent, and the user is the one supplying the
            gap here. -->
@@ -121,6 +150,7 @@ function submit() {
             min="0"
             step="any"
             @input="trackValidity('grams', $event)"
+            @blur="trackValidity('grams', $event)"
           />
           g
         </span>
@@ -137,6 +167,7 @@ function submit() {
             step="any"
             :aria-invalid="badFields.has(key) || undefined"
             @input="trackValidity(key, $event)"
+            @blur="trackValidity(key, $event)"
           />
           {{ unitFor(key) }} / 100 g
         </span>
