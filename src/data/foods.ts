@@ -16,8 +16,10 @@
  * them would make them evictable by the LRU, and a corrected value here would
  * never reach an install that had already copied the old one.
  *
- * Only registry nutrients can appear (§5), so today that is energy, protein and
- * vitaminD. The set grows with the registry, not with this file.
+ * Only registry nutrients can appear (§5), and a nutrient no seed carries simply
+ * does not appear in a total — carbohydrate and fat are in the registry now, and
+ * stay absent here because nobody looked those up either. The set grows with the
+ * registry, not with this file.
  */
 import type { Food, MealTemplate } from '../types'
 
