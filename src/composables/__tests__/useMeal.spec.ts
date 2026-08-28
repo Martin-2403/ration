@@ -19,7 +19,9 @@ describe('useMeal', () => {
     const draft = useMeal(porridge)
 
     expect(draft.slots.value.map((s) => s.foodId)).toEqual(['oats', 'milk', 'banana'])
-    expect(draft.slots.value.map((s) => s.grams)).toEqual([50, 200, 80])
+    // Strings, because the field is a text input and the draft holds what was
+    // typed rather than what a number input decided it meant.
+    expect(draft.slots.value.map((s) => s.gramsInput)).toEqual(['50', '200', '80'])
   })
 
   it('reports no totals until the foods are loaded', () => {
@@ -44,7 +46,7 @@ describe('useMeal', () => {
     await draft.load()
     const before = draft.totals.value.energy!.amount
 
-    draft.slots.value[0]!.grams = 100
+    draft.slots.value[0]!.gramsInput = '100'
 
     expect(draft.totals.value.energy!.amount).toBeCloseTo(before + 185, 6)
   })
@@ -143,15 +145,65 @@ describe('useMeal', () => {
     expect(entry.totals.energy?.amount).toBeCloseTo(387, 6)
   })
 
+  it('reads a decimal comma as a decimal separator', async () => {
+    const draft = useMeal(porridge)
+    await draft.load()
+
+    // German uses the comma (§14). A number input reported this as the empty
+    // string, so the slot silently contributed nothing.
+    draft.slots.value[0]!.gramsInput = '12,5'
+
+    // oats 370/100g at 12.5g = 46.25, replacing 185.
+    expect(draft.totals.value.energy?.amount).toBeCloseTo(387 - 185 + 46.25, 6)
+    expect(draft.items.value?.[0]).toMatchObject({ grams: 12.5 })
+    expect(draft.canLog.value).toBe(true)
+  })
+
+  it('refuses to log a slot whose amount is not a number', async () => {
+    const draft = useMeal(porridge)
+    await draft.load()
+    draft.slots.value[1]!.gramsInput = '200g'
+
+    expect(draft.canLog.value).toBe(false)
+    expect(draft.unusable.value).toEqual(['Liquid'])
+    // No items at all rather than the slot silently becoming a zero (§3).
+    expect(draft.items.value).toBeUndefined()
+    expect(() => draft.toEntry()).toThrow()
+  })
+
+  it.each([
+    ['blank', ''],
+    ['zero', '0'],
+    ['negative', '-50'],
+  ])('refuses to log a %s amount', async (_case, typed) => {
+    const draft = useMeal(porridge)
+    await draft.load()
+    draft.slots.value[0]!.gramsInput = typed
+
+    // An amount eaten has no meaningful blank and no meaningful zero: a slot
+    // contributing nothing should be left off the template, not logged as none.
+    expect(draft.canLog.value).toBe(false)
+    expect(draft.unusable.value).toEqual(['Base'])
+  })
+
+  it('cannot be logged before the foods have resolved', () => {
+    const draft = useMeal(porridge)
+
+    // The amounts are all fine — it is the lookup that has not happened, and
+    // logging now would snapshot empty totals as though nothing were known.
+    expect(draft.unusable.value).toEqual([])
+    expect(draft.canLog.value).toBe(false)
+  })
+
   it('returns to the template defaults on reset', async () => {
     const draft = useMeal(porridge)
     await draft.load()
-    draft.slots.value[0]!.grams = 999
+    draft.slots.value[0]!.gramsInput = '999'
     draft.slots.value[2]!.foodId = 'blueberries'
 
     draft.reset()
 
-    expect(draft.slots.value.map((s) => s.grams)).toEqual([50, 200, 80])
+    expect(draft.slots.value.map((s) => s.gramsInput)).toEqual(['50', '200', '80'])
     expect(draft.slots.value.map((s) => s.foodId)).toEqual(['oats', 'milk', 'banana'])
   })
 })

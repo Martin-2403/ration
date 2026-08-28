@@ -41,12 +41,15 @@ async function logMeal() {
       }}</span>
 
       <span class="grams">
+        <!-- text, not number: see parse-amount.ts. inputmode keeps the numeric
+             keypad on a phone, and a decimal comma survives. -->
         <input
-          v-model.number="slot.grams"
-          type="number"
-          min="0"
-          step="any"
+          v-model="slot.gramsInput"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
           :aria-label="`Grams of ${slot.label}`"
+          :aria-invalid="draft.amounts.value[index]?.kind === 'not-a-number' || undefined"
         />
         g
       </span>
@@ -61,6 +64,12 @@ async function logMeal() {
     </div>
 
     <div class="footer">
+      <!-- A blocked log always names the slots holding it up, rather than
+           leaving a disabled button with no explanation. -->
+      <p v-if="draft.ready.value && draft.unusable.value.length > 0" class="problem" role="status">
+        Needs an amount: {{ draft.unusable.value.join(', ') }}
+      </p>
+
       <span class="total">
         {{
           draft.totals.value.energy
@@ -68,7 +77,7 @@ async function logMeal() {
             : '—'
         }}
       </span>
-      <button type="button" :disabled="!draft.ready.value" @click="logMeal">Log meal</button>
+      <button type="button" :disabled="!draft.canLog.value" @click="logMeal">Log meal</button>
     </div>
   </section>
 </template>
@@ -119,10 +128,16 @@ input:hover {
   border-color: var(--ink-soft);
 }
 
-input[type='number'] {
+input {
   width: 4.5rem;
   text-align: right;
   font-feature-settings: var(--figures-tabular);
+}
+
+/* Supplements the message rather than replacing it — colour never carries the
+   meaning on its own (§15). */
+input[aria-invalid='true'] {
+  border-color: var(--status-under);
 }
 
 .grams,
@@ -149,6 +164,13 @@ input[type='number'] {
   gap: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--line);
+}
+
+/* Paired with text, never colour alone (§15). */
+.problem {
+  margin: 0 auto 0 0;
+  font-size: var(--text-caption);
+  color: var(--status-under);
 }
 
 button {
