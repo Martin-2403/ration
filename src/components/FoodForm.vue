@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { NUTRIENTS, type NutrientKey } from '../data/nutrients'
 import { labelFor, unitFor } from '../nutrient-display'
+import { parseAmount } from '../parse-amount'
 import type { Food } from '../types'
 import { buildUserFood } from '../user-food'
 
@@ -10,79 +11,71 @@ const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
 
 const keys = Object.keys(NUTRIENTS) as NutrientKey[]
 
-/**
- * What a number input can actually hold. `v-model.number` leaves the raw string
- * in place when it will not parse, and a `type="number"` field reports both a
- * cleared field and unparseable content as `''` — so the model is wider than
- * `number` whether we like it or not, and typing it honestly is what lets the
- * checks below tell blank apart from invalid.
- */
-type FieldValue = number | '' | null | undefined
-
+// Raw strings, because the fields are text inputs and we do the parsing (see
+// parse-amount.ts for why a number input is not used here).
 const name = ref('')
-const grams = ref<FieldValue>(null)
-const values = ref<Partial<Record<NutrientKey, FieldValue>>>({})
+const grams = ref('')
+const values = ref<Record<string, string>>({})
 
-const isBlank = (value: FieldValue) => value === '' || value === null || value === undefined
+const parsedGrams = computed(() => parseAmount(grams.value))
 
-const isUsableAmount = (value: FieldValue) =>
-  typeof value === 'number' && Number.isFinite(value) && value >= 0
+const parsedValues = computed(() =>
+  keys.map((key) => ({ key, parsed: parseAmount(values.value[key] ?? '') })),
+)
 
-/**
- * Fields holding text a number input cannot parse.
- *
- * Needed because the model alone cannot tell blank from invalid: Chrome keeps
- * "abc" visible in a number field while reporting `value` as `''`. Treating that
- * as blank would silently record "no data" for a field the user can see content
- * in. `validity.badInput` is the only thing that distinguishes the two.
- */
-const badFields = ref(new Set<string>())
+/** Fields holding something that is not a number at all. */
+const notNumeric = computed(() => {
+  const bad = parsedValues.value
+    .filter((entry) => entry.parsed.kind === 'not-a-number')
+    .map((entry) => labelFor(entry.key))
 
-function trackValidity(field: string, event: Event) {
-  const input = event.target as HTMLInputElement
-  const next = new Set(badFields.value)
+  if (parsedGrams.value.kind === 'not-a-number') bad.unshift('Eaten')
 
-  if (input.validity.badInput) next.add(field)
-  else next.delete(field)
+  return bad
+})
 
-  badFields.value = next
+const negative = computed(() => {
+  const bad = parsedValues.value
+    .filter((entry) => entry.parsed.kind === 'number' && entry.parsed.value < 0)
+    .map((entry) => labelFor(entry.key))
+
+  if (parsedGrams.value.kind === 'number' && parsedGrams.value.value < 0) bad.unshift('Eaten')
+
+  return bad
+})
+
+const isBad = (key: NutrientKey) => {
+  const parsed = parseAmount(values.value[key] ?? '')
+
+  return parsed.kind === 'not-a-number' || (parsed.kind === 'number' && parsed.value < 0)
 }
 
 const canSubmit = computed(() => {
-  if (badFields.value.size > 0) return false
   if (name.value.trim().length === 0) return false
+  if (notNumeric.value.length > 0 || negative.value.length > 0) return false
 
-  // Grams must be a real positive number: it is what everything gets scaled by.
-  if (!isUsableAmount(grams.value) || grams.value === 0) return false
-
-  // Nutrient fields are optional, so blank passes — that is the documented way
-  // to say "no data". Anything present must be a usable number.
-  return Object.values(values.value).every((value) => isBlank(value) || isUsableAmount(value))
+  // An amount eaten has no meaningful blank: it is what everything is scaled by.
+  return parsedGrams.value.kind === 'number' && parsedGrams.value.value > 0
 })
-
-const hasNegative = computed(() =>
-  [grams.value, ...Object.values(values.value)].some(
-    (value) => typeof value === 'number' && value < 0,
-  ),
-)
 
 function submit() {
   if (!canSubmit.value) return
 
-  // Drop blanks rather than passing '' through: buildUserFood records an absent
-  // key as unknown, which is what a blank field means.
+  // Only fields that parsed to a number are passed on. A blank becomes an absent
+  // key, which buildUserFood records as unknown — never as zero (§3).
   const per100g: Partial<Record<NutrientKey, number>> = {}
-  for (const key of keys) {
-    const value = values.value[key]
-    if (typeof value === 'number') per100g[key] = value
+  for (const { key, parsed } of parsedValues.value) {
+    if (parsed.kind === 'number') per100g[key] = parsed.value
   }
 
-  emit('submit', buildUserFood({ name: name.value, per100g }), grams.value as number)
+  const amount = parsedGrams.value
+  if (amount.kind !== 'number') return
+
+  emit('submit', buildUserFood({ name: name.value, per100g }), amount.value)
 
   name.value = ''
-  grams.value = null
+  grams.value = ''
   values.value = {}
-  badFields.value = new Set()
 }
 </script>
 
@@ -90,20 +83,13 @@ function submit() {
   <details class="card">
     <summary>Add a food by hand</summary>
 
-    <!--
-      novalidate on purpose. The browser's own constraint validation is a second,
-      invisible gate: it can refuse to submit while the button still looks
-      enabled, which is how a `step` attribute silently blocked every amount that
-      was not a multiple of it. This component does its own validation and states
-      its own reasons, so an enabled button must always mean the submit runs.
-    -->
     <form novalidate @submit.prevent="submit">
       <!-- Saying this explicitly matters: a blank field becoming a zero is the
            mistake §3 exists to prevent, and the user is the one supplying the
            gap here. -->
       <p class="hint">
         Values are per 100 g. Leave a field blank if you do not know it — blank is recorded as no
-        data, never as zero.
+        data, never as zero. A comma or a dot both work as the decimal separator.
       </p>
 
       <div class="row">
@@ -114,13 +100,15 @@ function submit() {
       <div class="row">
         <label for="food-grams">Eaten</label>
         <span class="amount">
+          <!-- text, not number: see parse-amount.ts. inputmode keeps the numeric
+               keypad on a phone. -->
           <input
             id="food-grams"
-            v-model.number="grams"
-            type="number"
-            min="0"
-            step="any"
-            @input="trackValidity('grams', $event)"
+            v-model="grams"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            :aria-invalid="parsedGrams.kind === 'not-a-number' || undefined"
           />
           g
         </span>
@@ -131,23 +119,24 @@ function submit() {
         <span class="amount">
           <input
             :id="`food-${key}`"
-            v-model.number="values[key]"
-            type="number"
-            min="0"
-            step="any"
-            :aria-invalid="badFields.has(key) || undefined"
-            @input="trackValidity(key, $event)"
+            v-model="values[key]"
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            :aria-invalid="isBad(key) || undefined"
           />
           {{ unitFor(key) }} / 100 g
         </span>
       </div>
 
       <div class="footer">
-        <!-- A disabled button with no stated reason is its own bug. -->
-        <p v-if="badFields.size > 0" class="problem" role="status">
-          {{ badFields.size === 1 ? 'A value is' : 'Some values are' }} not a number
+        <!-- A blocked submit always names what is wrong and where. -->
+        <p v-if="notNumeric.length > 0" class="problem" role="status">
+          Not a number: {{ notNumeric.join(', ') }}
         </p>
-        <p v-else-if="hasNegative" class="problem" role="status">Values cannot be negative</p>
+        <p v-else-if="negative.length > 0" class="problem" role="status">
+          Cannot be negative: {{ negative.join(', ') }}
+        </p>
 
         <button type="submit" :disabled="!canSubmit">Save and log</button>
       </div>

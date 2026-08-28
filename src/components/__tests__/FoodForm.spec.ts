@@ -101,13 +101,13 @@ describe('FoodForm', () => {
     expect(food.per100g.protein?.source).toBe('unknown')
   })
 
-  it('refuses a negative value and says so', async () => {
+  it('refuses a negative value and names the field', async () => {
     const wrapper = mount(FoodForm)
     await fill(wrapper, { name: 'Apple', grams: '150' })
     await wrapper.find('#food-protein').setValue('-5')
 
     expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('cannot be negative')
+    expect(wrapper.text()).toContain('Cannot be negative: Protein')
   })
 
   it('refuses a negative amount eaten', async () => {
@@ -120,19 +120,78 @@ describe('FoodForm', () => {
   it('accepts an amount that is not a round number', async () => {
     const wrapper = mount(FoodForm)
     await fill(wrapper, { name: 'Apple', grams: '123', energy: '52' })
-
-    // A step of 5 made every non-multiple natively invalid, so the browser
-    // refused the submit while the button still looked enabled. Nothing in the
-    // app could see it, because triggering submit in a test bypasses native
-    // validation entirely — hence the attribute assertions below.
-    const grams = wrapper.find('#food-grams')
-    expect(grams.attributes('step')).toBe('any')
-    expect(wrapper.find('form').attributes('novalidate')).toBeDefined()
-    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
-
     await wrapper.find('form').trigger('submit')
+
+    // A step of 5 once made every non-multiple natively invalid, so the browser
+    // refused the submit while the button still looked enabled.
     const [, emittedGrams] = wrapper.emitted('submit')![0] as [unknown, number]
     expect(emittedGrams).toBe(123)
+  })
+
+  // Deliberate: a number input hides unparseable text from the app and rejects
+  // the decimal comma in some locales. See parse-amount.ts.
+  it.each(['#food-grams', '#food-energy', '#food-protein', '#food-vitaminD'])(
+    '%s is a text input with a decimal keypad, not a number input',
+    (id) => {
+      const wrapper = mount(FoodForm)
+
+      expect(wrapper.find(id).attributes('type')).toBe('text')
+      expect(wrapper.find(id).attributes('inputmode')).toBe('decimal')
+    },
+  )
+
+  it('blocks submit on letters and names the field', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-energy').setValue('abc')
+
+    // The reported bug: a letter left the form submittable, and the value was
+    // silently recorded as no data.
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Not a number: Energy')
+    expect(wrapper.find('#food-energy').attributes('aria-invalid')).toBe('true')
+  })
+
+  it('blocks submit on letters in the amount eaten', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: 'abc' })
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Not a number: Eaten')
+  })
+
+  it('recovers once the bad text is replaced', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-energy').setValue('abc')
+    await wrapper.find('#food-energy').setValue('52')
+
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Not a number')
+  })
+
+  it('accepts a decimal comma', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-protein').setValue('1,5')
+    await wrapper.find('form').trigger('submit')
+
+    // German uses the comma as its decimal separator (§14). A number input
+    // silently emptied the field instead.
+    const [food] = wrapper.emitted('submit')![0] as [
+      { per100g: Record<string, { value: number; source: string }> },
+    ]
+    expect(food.per100g.protein).toEqual({ value: 1.5, source: 'user' })
+  })
+
+  it('names every offending field, not just the first', async () => {
+    const wrapper = mount(FoodForm)
+    await fill(wrapper, { name: 'Apple', grams: '150' })
+    await wrapper.find('#food-energy').setValue('abc')
+    await wrapper.find('#food-protein').setValue('xyz')
+
+    expect(wrapper.text()).toContain('Energy')
+    expect(wrapper.text()).toContain('Protein')
   })
 
   it('offers an input for every tracked nutrient', () => {
