@@ -21,23 +21,31 @@ import {
   unitFor,
 } from '../nutrient-display'
 
-const {
-  nutrient,
-  total,
-  target,
-  limit,
-  origin = 'user',
-} = defineProps<{
+const { nutrient, total, target, limit, origin } = defineProps<{
   nutrient: NutrientKey
   total: NutrientTotal
   /** Already scaled to the window by the caller — §9's target × daysLogged. */
   target?: number
   /** Scaled the same way. Absent means no limit is known, never zero (§5). */
   limit?: number
+  /**
+   * Whose figure the target is. Absent means nobody said, and the bar then
+   * attributes it to nobody — guessing "your goal" would be the misattribution
+   * §3 exists to prevent, and a default is exactly how that guess gets made.
+   */
   origin?: ResolvedTarget['origin']
 }>()
 
 const noData = computed(() => hasNoData(total))
+
+/**
+ * Both figures arrive scaled by §9's daysLogged, which is zero for a window with
+ * no records at all. A target of zero is not a target and a limit of zero is not
+ * a limit, so neither is treated as one: comparing against zero would report a
+ * full bar and an exceeded limit for a period nothing is known about.
+ */
+const hasTarget = computed(() => target !== undefined && target > 0)
+const hasLimit = computed(() => limit !== undefined && limit > 0)
 
 /**
  * The widest figure the track has to hold, so the target tick can stay at 100%
@@ -45,27 +53,40 @@ const noData = computed(() => hasNoData(total))
  * a fixed multiple of target instead would clip a large overshoot.
  */
 const scale = computed(() => {
-  if (target === undefined) return undefined
+  if (!hasTarget.value) return undefined
 
-  return Math.max(total.amount, target, limit ?? 0)
+  return Math.max(total.amount, target!, hasLimit.value ? limit! : 0)
 })
 
 const percentOfScale = (value: number) => (scale.value ? (value / scale.value) * 100 : 0)
 
-const tickPercent = computed(() => (target === undefined ? 0 : percentOfScale(target)))
+const tickPercent = computed(() => (hasTarget.value ? percentOfScale(target!) : 0))
 const fillPercent = computed(() => percentOfScale(total.amount))
 
 /** Only ever true when a limit is actually known (§5). */
-const overLimit = computed(() => limit !== undefined && total.amount > limit)
+const overLimit = computed(() => hasLimit.value && total.amount > limit!)
 
-const belowTarget = computed(() => target !== undefined && total.amount < target)
+const belowTarget = computed(() => hasTarget.value && total.amount < target!)
 
 /** Share of target, for the figure beside the bar. Undefined without a target. */
 const share = computed(() =>
-  target === undefined || target === 0 ? undefined : Math.round((total.amount / target) * 100),
+  hasTarget.value ? Math.round((total.amount / target!) * 100) : undefined,
 )
 
 const against = computed(() => (origin === 'user' ? 'your goal' : 'the reference'))
+
+/**
+ * The target rendered at its display precision, or undefined when there is none.
+ * A computed rather than formatting inline: `hasTarget` does not narrow `target`
+ * for the template, and scattering non-null assertions through the markup to
+ * work around that invites someone to keep one after the guard moves.
+ */
+const targetLabel = computed(() => (hasTarget.value ? formatAmount(nutrient, target!) : undefined))
+
+/** Whether anything at all would render in the notes line (see the template). */
+const hasNotes = computed(
+  () => !hasTarget.value || !noData.value || isPartial(total) || estimatedPercent(total) > 0,
+)
 </script>
 
 <template>
@@ -78,13 +99,13 @@ const against = computed(() => (origin === 'user' ? 'your goal' : 'the reference
         <span :class="{ estimated: estimatedPercent(total) > 0 }">
           {{ formatAmount(nutrient, total.amount) }} {{ unitFor(nutrient) }}
         </span>
-        <template v-if="target !== undefined"> of {{ formatAmount(nutrient, target) }} </template>
+        <template v-if="targetLabel"> of {{ targetLabel }} </template>
       </span>
     </div>
 
     <!-- No target means nothing to draw against: no track rather than a full or
          an empty one, either of which would imply a comparison (§3). -->
-    <div v-if="!noData && target !== undefined" class="track" aria-hidden="true">
+    <div v-if="!noData && hasTarget" class="track" aria-hidden="true">
       <div
         class="fill"
         :class="{ over: overLimit, under: belowTarget }"
@@ -94,10 +115,16 @@ const against = computed(() => (origin === 'user' ? 'your goal' : 'the reference
       <span class="tick" :style="{ left: `${tickPercent}%` }" />
     </div>
 
-    <p class="notes">
-      <span v-if="target === undefined" class="muted">No target</span>
+    <!-- Omitted entirely when it would be empty, rather than left as a blank
+         paragraph still taking a row in the grid. -->
+    <p v-if="hasNotes" class="notes">
+      <span v-if="!hasTarget" class="muted">No target</span>
       <template v-else-if="!noData">
-        <span>{{ share }}% of {{ against }}</span>
+        <span>
+          {{ share }}%
+          <!-- Attributed only when the caller said whose figure it is (§3). -->
+          <template v-if="origin">of {{ against }}</template>
+        </span>
         <!-- Paired with the bar's length, never colour alone (§15). -->
         <span v-if="overLimit" class="over-label">· over the limit</span>
       </template>

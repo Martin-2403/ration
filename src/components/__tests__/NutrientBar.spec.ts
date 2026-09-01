@@ -36,7 +36,7 @@ const geometry = (wrapper: ReturnType<typeof render>) => ({
 
 describe('NutrientBar', () => {
   it('shows the intake against the target', () => {
-    const wrapper = render({ total: total(1500), target: 2000 })
+    const wrapper = render({ total: total(1500), target: 2000, origin: 'user' })
 
     expect(wrapper.text()).toContain('1500 kcal')
     expect(wrapper.text()).toContain('of 2000')
@@ -124,6 +124,43 @@ describe('NutrientBar', () => {
     expect(wrapper.text()).toContain('40% estimated')
     // The dotted marker survives greyscale, same treatment as the day summary.
     expect(wrapper.find('.estimated').exists()).toBe(true)
+  })
+
+  it('treats a zero target as no target at all', () => {
+    // §9 scales by daysLogged, which is zero for a window with no records. A
+    // zero target compared against would report a full bar and a blank
+    // percentage for a period nothing is known about.
+    const wrapper = render({ total: total(500), target: 0, origin: 'user' })
+
+    expect(wrapper.text()).toContain('No target')
+    expect(wrapper.text()).not.toContain('of your goal')
+    expect(wrapper.find('.track').exists()).toBe(false)
+  })
+
+  it('never claims over-limit against a zero limit', () => {
+    // Same reason: a limit scaled to zero is not a limit that was exceeded.
+    const wrapper = render({ total: total(500), target: 2000, limit: 0, origin: 'user' })
+
+    expect(wrapper.text()).not.toContain('over the limit')
+    expect(wrapper.find('.fill').classes()).not.toContain('over')
+  })
+
+  it('attributes the target to nobody when the caller did not say', () => {
+    // Defaulting to "your goal" would state provenance the component was never
+    // given, which is the misattribution §3 forbids.
+    const wrapper = render({ total: total(1500), target: 2000 })
+
+    expect(wrapper.text()).toContain('75%')
+    expect(wrapper.text()).not.toContain('your goal')
+    expect(wrapper.text()).not.toContain('the reference')
+  })
+
+  it('renders no notes line for a no-data nutrient', () => {
+    const wrapper = render({ total: total(0, 'unknown', 3), target: 2000 })
+
+    // Otherwise an empty paragraph still takes a row in the grid, leaving an
+    // unexplained gap under the one row that has nothing to say.
+    expect(wrapper.find('.notes').exists()).toBe(false)
   })
 
   it('hides the bar from assistive tech, since the text carries the same facts', () => {
