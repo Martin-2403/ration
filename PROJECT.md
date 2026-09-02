@@ -778,7 +778,7 @@ src/
     export.ts           // versioned envelope + WebCrypto (§10)
     import.ts           // decrypt + merge/replace
   views/
-    DayView.vue  EvaluationView.vue  SupplementsView.vue  SettingsView.vue
+    DayView.vue  LogView.vue  EvaluationView.vue  SupplementsView.vue  SettingsView.vue
   components/
     DaySummary.vue  MealBuilder.vue  MealSlot.vue  DayLog.vue
     NutrientReport.vue  NutrientBar.vue  FoodForm.vue

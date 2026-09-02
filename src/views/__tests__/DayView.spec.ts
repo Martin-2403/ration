@@ -6,16 +6,19 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../db'
+import router from '../../router'
 import DayView from '../DayView.vue'
 
 const render = async () => {
-  const wrapper = mount(DayView, { attachTo: document.body })
+  router.push('/')
+  await router.isReady()
+  const wrapper = mount(DayView, { global: { plugins: [router] }, attachTo: document.body })
   await flushPromises()
 
   return wrapper
 }
 
-const logButton = (wrapper: Awaited<ReturnType<typeof render>>) => wrapper.find('button.log')
+const logLink = (wrapper: Awaited<ReturnType<typeof render>>) => wrapper.find('.log')
 
 beforeEach(async () => {
   await Promise.all([db.logEntries.clear(), db.foods.clear()])
@@ -31,44 +34,22 @@ describe('DayView', () => {
     const wrapper = await render()
 
     // The screen is named after the day, so it opens showing the day (#53) —
-    // not three editable forms prefilled with fixture values.
-    expect(wrapper.text()).toContain('Today')
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    // not editable forms prefilled with fixture values.
     expect(wrapper.find('#food-name').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Rolled oats')
   })
 
-  it('offers one deliberate way in', async () => {
+  it('sends logging to its own route', async () => {
     const wrapper = await render()
 
-    expect(logButton(wrapper).text()).toBe('Log something')
+    // A link, not a sheet: logging carries its own date rather than inheriting
+    // whichever day this screen happens to show (#61, #62).
+    expect(logLink(wrapper).text()).toBe('Log something')
+    expect(logLink(wrapper).attributes('href')).toBe('/log')
   })
 
-  it('opens the sheet on request', async () => {
+  it('leaves nothing modal behind', async () => {
     const wrapper = await render()
-
-    await logButton(wrapper).trigger('click')
-
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('A food by hand')
-  })
-
-  it('makes the page behind the sheet inert', async () => {
-    const wrapper = await render()
-    expect(wrapper.find('.page').attributes('inert')).toBeUndefined()
-
-    await logButton(wrapper).trigger('click')
-
-    // Otherwise the day navigation and the delete buttons behind the sheet stay
-    // clickable, and Tab walks into them.
-    expect(wrapper.find('.page').attributes('inert')).toBeDefined()
-  })
-
-  it('closes the sheet and gives the page back', async () => {
-    const wrapper = await render()
-    await logButton(wrapper).trigger('click')
-
-    await wrapper.find('button[aria-label="Close"]').trigger('click')
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(wrapper.find('.page').attributes('inert')).toBeUndefined()

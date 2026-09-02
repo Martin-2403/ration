@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { addLocalDays, nextLocalMidnight, startOfLocalDay } from '../dates'
+import {
+  addLocalDays,
+  localMiddayFromISODate,
+  nextLocalMidnight,
+  startOfLocalDay,
+  toISODate,
+} from '../dates'
 
 const isLocalMidnight = (ts: number) => {
   const d = new Date(ts)
@@ -93,5 +99,69 @@ describe('addLocalDays', () => {
     const at = new Date(2026, 7, 27, 9, 15).getTime()
 
     expect(addLocalDays(at, 1)).toBe(nextLocalMidnight(at))
+  })
+})
+
+describe('toISODate', () => {
+  it('reports the local calendar date', () => {
+    expect(toISODate(new Date(2026, 7, 27, 13, 45).getTime())).toBe('2026-08-27')
+  })
+
+  it('pads single-digit months and days', () => {
+    expect(toISODate(new Date(2026, 0, 5, 9, 0).getTime())).toBe('2026-01-05')
+  })
+
+  it('reports the local day late in the evening, not the UTC one', () => {
+    // toISOString would roll this into the 28th anywhere ahead of UTC, which is
+    // the whole reason this is built from local parts.
+    expect(toISODate(new Date(2026, 7, 27, 23, 30).getTime())).toBe('2026-08-27')
+  })
+
+  it('round-trips with localMiddayFromISODate', () => {
+    const iso = toISODate(new Date(2026, 9, 25, 4, 0).getTime())
+
+    expect(toISODate(localMiddayFromISODate(iso)!)).toBe(iso)
+  })
+})
+
+describe('localMiddayFromISODate', () => {
+  it('lands at midday on the named local day', () => {
+    const at = localMiddayFromISODate('2026-08-27')!
+
+    expect(new Date(at).getDate()).toBe(27)
+    expect(new Date(at).getHours()).toBe(12)
+  })
+
+  // One test per month rather than a loop, so a failure names the month it
+  // broke on instead of just the first one it hit.
+  it.each(['2026-01-15', '2026-03-15', '2026-04-15', '2026-07-15', '2026-10-15', '2026-11-15'])(
+    'names %s as the same day whatever the runner timezone',
+    (iso) => {
+      // `new Date('2026-08-27')` is UTC midnight, which is the 26th anywhere
+      // behind UTC. Parsing by parts is what keeps this true.
+      expect(toISODate(localMiddayFromISODate(iso)!)).toBe(iso)
+    },
+  )
+
+  // The last Sunday of March and of October, where EU clocks move.
+  it.each(['2026-03-29', '2026-10-25'])('sits inside %s across a DST change', (iso) => {
+    const at = localMiddayFromISODate(iso)!
+
+    expect(at).toBeGreaterThanOrEqual(startOfLocalDay(at))
+    expect(at).toBeLessThan(nextLocalMidnight(at))
+  })
+
+  // A cleared field must block the write rather than pick a day for the user.
+  it.each(['', '27.08.2026', '2026-8-27', 'today', '2026-08'])(
+    'refuses %s, which is not a date',
+    (value) => {
+      expect(localMiddayFromISODate(value)).toBeUndefined()
+    },
+  )
+
+  it('refuses a date that does not exist', () => {
+    // The Date constructor rolls 31 February into March rather than refusing.
+    expect(localMiddayFromISODate('2026-02-31')).toBeUndefined()
+    expect(localMiddayFromISODate('2026-13-01')).toBeUndefined()
   })
 })
