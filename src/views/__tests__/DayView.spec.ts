@@ -6,10 +6,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../db'
-import TodayView from '../TodayView.vue'
+import DayView from '../DayView.vue'
 
 const render = async () => {
-  const wrapper = mount(TodayView, { attachTo: document.body })
+  const wrapper = mount(DayView, { attachTo: document.body })
   await flushPromises()
 
   return wrapper
@@ -26,7 +26,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('TodayView', () => {
+describe('DayView', () => {
   it('shows the day rather than a page of forms', async () => {
     const wrapper = await render()
 
@@ -78,7 +78,7 @@ describe('TodayView', () => {
     const wrapper = await render()
 
     // Lower case: the eyebrow is uppercased by CSS, not in the markup.
-    expect(wrapper.text()).toContain('Today')
+    expect(wrapper.text()).toContain('Intake')
     expect(wrapper.text()).toContain('Nothing logged yet')
   })
 })

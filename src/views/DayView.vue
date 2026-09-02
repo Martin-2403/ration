@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 import DaySummary from '../components/DaySummary.vue'
 import LogSheet from '../components/LogSheet.vue'
-import TodayLog from '../components/TodayLog.vue'
+import DayLog from '../components/DayLog.vue'
 import { SEED_TEMPLATES } from '../data/foods'
 import { useLogStore } from '../stores/log'
 
@@ -51,7 +51,7 @@ const heading = computed(() =>
 
     <button type="button" class="log" @click="logging = true">Log something</button>
 
-    <TodayLog :entries="store.entries" @remove="store.removeEntry" />
+    <DayLog :entries="store.entries" @remove="store.removeEntry" />
   </div>
 
   <!-- Outside the page, so marking the page inert does not disable the sheet. -->
