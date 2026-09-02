@@ -22,10 +22,13 @@
  * 7. An average meeting the target is a weaker claim than hitting it daily. This
  *    module therefore reports `atOrAboveTarget` and leaves the wording to the
  *    view; nothing here says "met".
- *
- * NOT IMPLEMENTED YET — the spec comes first (§19). Every function below throws.
+ * 8. With no days logged there is no denominator, so there is no comparison:
+ *    targets read as absent rather than being scaled to zero, which would
+ *    otherwise report every nutrient as reached.
  */
 import type { NutrientKey, NutrientTotal, ResolvedTarget } from './data/nutrients'
+import { addLocalDays, nextLocalMidnight, startOfLocalDay } from './dates'
+import { mergeTotals } from './totals'
 import type { LogEntry } from './types'
 
 /** A half-open range of local days: `from` inclusive, `to` exclusive. */
@@ -70,7 +73,14 @@ export interface NutrientEvaluation {
  * before it, and `to` is the next local midnight.
  */
 export function trailingWindow(days: number, at: number = Date.now()): DayWindow {
-  throw new Error(`not implemented: trailingWindow(${days}, ${at})`)
+  // The day containing `at` is part of the window, so the exclusive bound is the
+  // next midnight rather than this one — otherwise today's intake never counts.
+  const to = nextLocalMidnight(at)
+
+  // addLocalDays, not `to - days * 86_400_000`: a day spanning a DST change is
+  // 23 or 25 hours long, and the fixed offset lands in the wrong day twice a
+  // year, stretching the window to an extra day or shrinking it by one.
+  return { from: addLocalDays(to, -days), to, days }
 }
 
 /**
@@ -81,7 +91,18 @@ export function trailingWindow(days: number, at: number = Date.now()): DayWindow
  * pass a wider set than it queried.
  */
 export function daysLogged(entries: LogEntry[], window: DayWindow): Coverage {
-  throw new Error(`not implemented: daysLogged(${entries.length} entries, ${window.days} days)`)
+  // A set of local midnights rather than a walk over the window: it counts the
+  // days that actually hold something, which is the denominator §9 asks for, and
+  // it cannot drift the way stepping by a fixed 86_400_000 does across DST.
+  const days = new Set<number>()
+
+  for (const entry of entries) {
+    if (entry.timestamp < window.from || entry.timestamp >= window.to) continue
+
+    days.add(startOfLocalDay(entry.timestamp))
+  }
+
+  return { logged: days.size, days: window.days }
 }
 
 /**
@@ -96,9 +117,63 @@ export function evaluate(
   targets: Partial<Record<NutrientKey, ResolvedTarget>>,
   window: DayWindow,
 ): NutrientEvaluation[] {
-  throw new Error(
-    `not implemented: evaluate(${entries.length} entries, ${Object.keys(targets).length} targets, ${window.days} days)`,
+  const inWindow = entries.filter(
+    (entry) => entry.timestamp >= window.from && entry.timestamp < window.to,
   )
+  const intakeByNutrient = mergeTotals(inWindow.map((entry) => entry.totals))
+  const coverage = daysLogged(inWindow, window)
+
+  const nutrientKeys = new Set<NutrientKey>()
+  for (const key in targets) {
+    nutrientKeys.add(key as NutrientKey)
+  }
+  for (const key in intakeByNutrient) {
+    nutrientKeys.add(key as NutrientKey)
+  }
+
+  const evaluations: NutrientEvaluation[] = []
+  for (const nutrient of nutrientKeys) {
+    const intake = intakeByNutrient[nutrient]
+    const resolvedTarget = targets[nutrient]
+
+    if (!intake && !resolvedTarget) {
+      continue
+    }
+
+    // A target the entries carry no value for is not an intake of zero: the
+    // entries in the window are contributors that had nothing for it, which is
+    // what `missing` counts, and the display rules then read it as no data (§3).
+    const intakeTotal: NutrientTotal = intake ?? {
+      amount: 0,
+      bySource: {},
+      missing: inWindow.length,
+    }
+
+    // Scaled only when there is something to scale by. Zero days logged means no
+    // denominator, so nothing is comparable and both figures read as absent —
+    // multiplying by zero would report every target as reached (rule 8).
+    const scaledTarget =
+      resolvedTarget && coverage.logged > 0 ? resolvedTarget.target * coverage.logged : undefined
+    const scaledLimit =
+      resolvedTarget?.upperLimit !== undefined && coverage.logged > 0
+        ? resolvedTarget.upperLimit * coverage.logged
+        : undefined
+
+    const comparable = scaledTarget !== undefined && scaledTarget > 0
+
+    evaluations.push({
+      nutrient,
+      intake: intakeTotal,
+      target: scaledTarget,
+      limit: scaledLimit,
+      origin: resolvedTarget?.origin,
+      share: comparable ? intakeTotal.amount / scaledTarget! : undefined,
+      atOrAboveTarget: comparable ? intakeTotal.amount >= scaledTarget! : false,
+      overLimit: scaledLimit !== undefined && scaledLimit > 0 && intakeTotal.amount > scaledLimit,
+    })
+  }
+
+  return evaluations
 }
 
 /**
@@ -109,5 +184,44 @@ export function evaluate(
  * Separate from `evaluate` so the ordering can be asserted on its own.
  */
 export function byUrgency(evaluations: NutrientEvaluation[]): NutrientEvaluation[] {
-  throw new Error(`not implemented: byUrgency(${evaluations.length} evaluations)`)
+  /**
+   * The fraction of the target still missing: 1 when nothing has been logged
+   * against a known target, 0 once it is reached. Relative rather than absolute
+   * because the amounts are not comparable — an energy gap is thousands of kcal
+   * and a selenium gap is tens of µg, so ranking by the raw difference sorts by
+   * unit size and buries every micronutrient under the macros.
+   *
+   * -1 for a nutrient with no target, which puts it below everything that can be
+   * ranked at all rather than tying it with the ones already met.
+   */
+  const unmetShare = (evaluation: NutrientEvaluation): number => {
+    if (evaluation.target === undefined || evaluation.target <= 0) return -1
+
+    return Math.max(1 - evaluation.intake.amount / evaluation.target, 0)
+  }
+
+  /** How far past a known limit, as a fraction of it. 0 when not over. */
+  const excessShare = (evaluation: NutrientEvaluation): number => {
+    if (!evaluation.overLimit || evaluation.limit === undefined || evaluation.limit <= 0) return 0
+
+    return evaluation.intake.amount / evaluation.limit - 1
+  }
+
+  return [...evaluations].sort((a, b) => {
+    // An exceeded limit is more actionable than any shortfall (§9), so it pins
+    // to the top regardless of how the rest compare.
+    if (a.overLimit !== b.overLimit) return a.overLimit ? -1 : 1
+
+    if (a.overLimit && b.overLimit) {
+      const excessDelta = excessShare(b) - excessShare(a)
+      if (excessDelta !== 0) return excessDelta
+    }
+
+    const unmetDelta = unmetShare(b) - unmetShare(a)
+    if (unmetDelta !== 0) return unmetDelta
+
+    // Alphabetical last, so the order is stable rather than dependent on the
+    // iteration order of the target map.
+    return a.nutrient.localeCompare(b.nutrient)
+  })
 }
