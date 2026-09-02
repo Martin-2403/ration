@@ -26,7 +26,9 @@ const rows = computed(() => keys.filter((key) => key !== 'energy').map((key) => 
 
 <template>
   <section class="card">
-    <p class="eyebrow">Today</p>
+    <!-- Names the content, not the day: the view heading above already says
+         which day this is, and "Today" was a false label on every other one. -->
+    <p class="eyebrow">Intake</p>
 
     <p v-if="loading" class="hero muted">–</p>
     <p v-else-if="!energy || hasNoData(energy)" class="hero muted">No data</p>

@@ -2,7 +2,7 @@
 
 <template>
   <nav>
-    <RouterLink to="/">Today</RouterLink>
+    <RouterLink to="/">Day</RouterLink>
     <RouterLink to="/evaluation">Evaluation</RouterLink>
     <RouterLink to="/supplements">Supplements</RouterLink>
     <RouterLink to="/settings">Settings</RouterLink>

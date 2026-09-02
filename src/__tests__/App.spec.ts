@@ -1,4 +1,4 @@
-// The root route renders TodayView, which reads the log store, which opens
+// The root route renders DayView, which reads the log store, which opens
 // Dexie — so both need to exist before mounting.
 import 'fake-indexeddb/auto'
 
@@ -18,7 +18,7 @@ describe('App', () => {
 
     // Mounting with the real router rather than stubbing RouterLink, so this
     // also catches a broken route table — the reason the shell exists at all.
-    expect(wrapper.text()).toContain('Today')
+    expect(wrapper.text()).toContain('Day')
     expect(wrapper.text()).toContain('Evaluation')
     expect(wrapper.text()).toContain('Supplements')
     expect(wrapper.text()).toContain('Settings')
