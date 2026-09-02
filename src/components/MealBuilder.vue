@@ -7,6 +7,9 @@ import { useLogStore } from '../stores/log'
 import type { MealTemplate } from '../types'
 
 const { template } = defineProps<{ template: MealTemplate }>()
+// Announced rather than assumed: whoever opened the builder decides what a
+// successful log means for the surface around it (#53).
+const emit = defineEmits<{ logged: [] }>()
 
 const store = useLogStore()
 const draft = useMeal(template)
@@ -16,13 +19,14 @@ onMounted(draft.load)
 async function logMeal() {
   await store.logMeal(draft.toEntry())
   draft.reset()
+  emit('logged')
 }
 </script>
 
 <template>
+  <!-- No heading of its own: whatever opens the builder names it, and the sheet
+       uses that name as the panel's accessible label (#53). -->
   <section class="card">
-    <h2>{{ template.name }}</h2>
-
     <div v-for="(slot, index) in draft.slots.value" :key="slot.slotId" class="slot">
       <label :for="`${template.id}-${slot.slotId}`">{{ slot.label }}</label>
 
@@ -88,12 +92,6 @@ async function logMeal() {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   padding: var(--space-5);
-}
-
-h2 {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-section);
-  font-weight: var(--weight-medium);
 }
 
 .slot {

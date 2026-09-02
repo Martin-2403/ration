@@ -80,9 +80,7 @@ function submit() {
 </script>
 
 <template>
-  <details class="card">
-    <summary>Add a food by hand</summary>
-
+  <div class="card">
     <form novalidate @submit.prevent="submit">
       <!-- Saying this explicitly matters: a blank field becoming a zero is the
            mistake §3 exists to prevent, and the user is the one supplying the
@@ -141,7 +139,7 @@ function submit() {
         <button type="submit" :disabled="!canSubmit">Save and log</button>
       </div>
     </form>
-  </details>
+  </div>
 </template>
 
 <style scoped>
@@ -152,14 +150,8 @@ function submit() {
   padding: var(--space-5);
 }
 
-summary {
-  cursor: pointer;
-  font-size: var(--text-section);
-  font-weight: var(--weight-medium);
-}
-
 .hint {
-  margin: var(--space-4) 0 0;
+  margin: 0;
   font-size: var(--text-caption);
   color: var(--ink-soft);
 }
