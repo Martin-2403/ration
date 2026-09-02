@@ -6,7 +6,11 @@ import { formatAmount } from '../nutrient-display'
 import { useLogStore } from '../stores/log'
 import type { MealTemplate } from '../types'
 
-const { template } = defineProps<{ template: MealTemplate }>()
+const { template, eatenAt } = defineProps<{
+  template: MealTemplate
+  /** When the meal was eaten. Defaults to now, and is not always now (§7, #61). */
+  eatenAt?: number
+}>()
 // Announced rather than assumed: whoever opened the builder decides what a
 // successful log means for the surface around it (#53).
 const emit = defineEmits<{ logged: [] }>()
@@ -17,7 +21,7 @@ const draft = useMeal(template)
 onMounted(draft.load)
 
 async function logMeal() {
-  await store.logMeal(draft.toEntry())
+  await store.logMeal(draft.toEntry(eatenAt))
   draft.reset()
   emit('logged')
 }

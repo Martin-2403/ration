@@ -69,13 +69,16 @@ export const useLogStore = defineStore('log', () => {
    * been logged.
    *
    * The same path takes a barcode-resolved food when that lands (#15).
+   *
+   * `timestamp` is when it was eaten, which is not always now: the log surface
+   * can name an earlier day (§7, #61).
    */
-  async function logFood(food: Food, grams: number) {
+  async function logFood(food: Food, grams: number, timestamp = Date.now()) {
     await foods.put(food)
 
     return log.add({
       name: food.name,
-      timestamp: Date.now(),
+      timestamp,
       items: [{ kind: 'food', foodId: food.id, grams }],
       totals: sumTotals([nutrientsFor(food, grams)]),
     })

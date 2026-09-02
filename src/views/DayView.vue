@@ -1,21 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import DaySummary from '../components/DaySummary.vue'
-import LogSheet from '../components/LogSheet.vue'
 import DayLog from '../components/DayLog.vue'
-import { SEED_TEMPLATES } from '../data/foods'
 import { useLogStore } from '../stores/log'
 
 const store = useLogStore()
-
-/**
- * Logging happens behind a deliberate action (#53). Leaving the builders and the
- * hand-entry form open on the page meant the first thing the app showed was
- * three editable forms full of fixture data, which reads as though it were
- * telling the user what they ate.
- */
-const logging = ref(false)
 
 const heading = computed(() =>
   store.isToday
@@ -29,11 +19,7 @@ const heading = computed(() =>
 </script>
 
 <template>
-  <!-- `logging || undefined`, not `logging`: Vue does not treat inert as a
-       boolean attribute, so a false value renders inert="false" — and inert
-       applies whenever the attribute is present, whatever its value. That would
-       leave the page permanently dead, including the button below. -->
-  <div class="page" :inert="logging || undefined">
+  <div class="page">
     <header>
       <button type="button" aria-label="Previous day" @click="store.shiftDay(-1)">←</button>
       <h1>{{ heading }}</h1>
@@ -49,13 +35,12 @@ const heading = computed(() =>
 
     <DaySummary :totals="store.dayTotals" :loading="store.loading" />
 
-    <button type="button" class="log" @click="logging = true">Log something</button>
+    <!-- Logging is its own route, so it carries its own date rather than
+         inheriting whichever day this screen happens to show (#61). -->
+    <RouterLink class="log" to="/log">Log something</RouterLink>
 
     <DayLog :entries="store.entries" @remove="store.removeEntry" />
   </div>
-
-  <!-- Outside the page, so marking the page inert does not disable the sheet. -->
-  <LogSheet v-if="logging" :templates="SEED_TEMPLATES" @close="logging = false" />
 </template>
 
 <style scoped>
@@ -92,7 +77,10 @@ button {
 }
 
 /* The most-used control in the app, so it reads as the primary one (§15). */
-button.log {
+.log {
+  display: block;
+  text-align: center;
+  text-decoration: none;
   font-weight: var(--weight-medium);
   color: var(--surface);
   background: var(--primary);
@@ -102,7 +90,7 @@ button.log {
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-button.log:hover {
+.log:hover {
   background: var(--primary-strong);
 }
 
