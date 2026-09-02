@@ -35,6 +35,32 @@ export default defineConfig({
         // change, change them here too.
         theme_color: '#146C6A',
         background_color: '#F4F7F7',
+        // Chrome and Edge withhold the install prompt without a 192px and a
+        // 512px icon, so these are the price of the §10 durability argument.
+        // The maskable pair is separate rather than `purpose: 'any maskable'`
+        // on one file: Android crops maskable art to its own shape, and art
+        // that survives that crop carries padding that looks wrong wherever
+        // the icon is shown uncropped. The PNGs are rasterized from
+        // public/icon.svg (rounded field, for uncropped use) and
+        // public/icon-maskable.svg (full-bleed, mark inside the safe circle).
+        // iOS ignores this array entirely — its icon is the apple-touch-icon
+        // link in index.html.
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          {
+            src: '/icon-maskable-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
       },
     }),
   ],
