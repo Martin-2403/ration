@@ -63,8 +63,11 @@ Verify a green run against the head SHA you actually pushed, not the branch name
 
 ## Never
 
-- Invent a **[verify]** value from §18. They need an authoritative source, and they
-  are the human's to fill in.
+- Invent a **[verify]** value from §18, or recall one from memory. Sourcing them is
+  delegated as of 2026-09-03: fetch the primary document, transcribe from it, and
+  record the source and retrieval date beside the value in code. Where a source does
+  not cover something, leave it absent rather than reaching for a second-best table.
+  Licence and terms questions get *reported*, not decided.
 - Render an unknown nutrient as `0`, or divide by elapsed days instead of days
   logged. Both turn missing records into a claim about the diet (§3, §9).
 - Rewrite a logged entry from upstream food data. Entries snapshot their values (§9).
