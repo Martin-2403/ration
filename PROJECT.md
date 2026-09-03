@@ -780,9 +780,9 @@ src/
   views/
     DayView.vue  LogView.vue  EvaluationView.vue  SupplementsView.vue  SettingsView.vue
   components/
-    DaySummary.vue  MealBuilder.vue  MealSlot.vue  DayLog.vue
-    NutrientReport.vue  NutrientBar.vue  FoodForm.vue
-    SupplementForm.vue  BackupPanel.vue
+    AppNav.vue  DaySummary.vue  MealBuilder.vue  MealSlot.vue  DayLog.vue
+    NutrientReport.vue  NutrientBar.vue  FoodForm.vue  EntryEditor.vue
+    GoalForm.vue  SupplementForm.vue  BackupPanel.vue
   App.vue
 ```
 

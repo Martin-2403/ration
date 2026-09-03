@@ -12,6 +12,16 @@
   box-sizing: border-box;
 }
 
+/* The app shell (§16: App.vue is nav + main). A column that always fills the
+   viewport, so the nav can sit at the bottom on a phone while staying in the
+   flow — the alternative is position: fixed and a padding on every view to keep
+   content from hiding under it. */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
 body {
   margin: 0;
   background: var(--bg);
