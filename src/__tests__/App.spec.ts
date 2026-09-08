@@ -19,6 +19,7 @@ describe('App', () => {
     // Mounting with the real router rather than stubbing RouterLink, so this
     // also catches a broken route table — the reason the shell exists at all.
     expect(wrapper.text()).toContain('Day')
+    expect(wrapper.text()).toContain('Log')
     expect(wrapper.text()).toContain('Evaluation')
     expect(wrapper.text()).toContain('Supplements')
     expect(wrapper.text()).toContain('Settings')
