@@ -875,8 +875,12 @@ by hand, and in this project they are short.
 - `data/nutrients.ts`, the registry (§5), and the domain types in `types.ts`
 - anything touching provenance semantics (§3) or the `daysLogged` denominator and
   window math (§9) — the places where a wrong answer still looks plausible
-- the **[verify]** items in §18, categorically. They need authoritative sources, and
-  the assistant is specifically instructed not to fill them in from memory
+- the **[verify]** items in §18 — the *decisions* in them, at least. Sourcing was
+  delegated on 2026-09-03: the assistant may fetch the primary document and
+  transcribe from it, recording the source and retrieval date beside the value. It
+  is still specifically instructed never to fill one in from memory, and licence or
+  terms questions come back as a report rather than a decision. What stays here is
+  which framework, how wide a first pass, and whether a licence is acceptable
 
 **Owned by the assistant** — mechanical expansion of decisions already made:
 
