@@ -25,7 +25,11 @@
   /* macros — kept within the clinical family */
   --macro-protein: #146c6a; /* petrol */
   --macro-carbs: #2f6690; /* steel blue */
-  --macro-fat: #c88a2e; /* amber */
+  /* Darkened from #c88a2e, which read 2.73:1 against --bg — under the 3:1 floor
+     §15 sets for a graphic, and a bar fill is a graphic. Same hue and
+     saturation, lightness scaled to 90%, giving 3.33:1 on --bg and 3.59:1 on
+     --surface. Enforced by theme/__tests__/tokens.spec.ts (#11). */
+  --macro-fat: #b47c29; /* amber */
 
   /* Status: two tones only. Severity is shown by BAR LENGTH, not extra
      colours, and over-limit gets no third colour either — the bar runs past

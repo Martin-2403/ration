@@ -643,7 +643,7 @@ it now costs one extra column in the token file.
   /* macros — kept within the clinical family */
   --macro-protein: #146C6A;  /* petrol */
   --macro-carbs:   #2F6690;  /* steel blue */
-  --macro-fat:     #C88A2E;  /* amber */
+  --macro-fat:     #B47C29;  /* amber — darkened for AA, see below */
 
   /* status — two tones only; SEVERITY IS SHOWN BY BAR LENGTH, not extra colors.
      (Dropped the earlier warn ochre: it collided with the fat macro, and encoding
@@ -742,6 +742,13 @@ readable without relying on colour at all.
 - Text contrast AA. Visible keyboard focus ring (petrol, 2px, offset).
 - Never encode meaning in color alone — pair with label, length, or icon.
 - Reduced motion honored.
+
+The AA floor is **enforced, not reviewed**: `theme/__tests__/tokens.spec.ts`
+parses `tokens.css` and fails when a foreground drops below 4.5:1 as text or
+3:1 as a graphic, against both `--bg` and `--surface`, in both schemes. It
+caught the fat macro at 2.73:1 on light, which is why that hex is darker here
+than it was originally (#11). Hairlines are exempt by design — `--line` is
+~1.2:1 and meant to be.
 
 Tokens live in `theme/tokens.css` and are the single source of truth; components
 reference variables, never literal hex.
