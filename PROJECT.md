@@ -754,6 +754,9 @@ reference variables, never literal hex.
 src/
   theme/
     tokens.css          // design tokens, light + dark — single source (§15)
+  i18n/
+    index.ts            // vue-i18n instance, English-only for MVP (§14)
+    en.ts               // UI strings; nutrient labels keyed on registry ids (§5)
   data/
     nutrients.ts        // NUTRIENT REGISTRY — build first, everything keys on it (§5)
     foods.ts            // seed foods + meal templates

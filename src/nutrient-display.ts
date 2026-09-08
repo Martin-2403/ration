@@ -4,11 +4,16 @@
  * Kept out of the components so the honesty rules are testable as functions
  * rather than only through rendered markup.
  */
-import { NUTRIENT_LABELS } from './data/nutrient-labels.en'
 import { NUTRIENTS, type NutrientKey, type NutrientTotal } from './data/nutrients'
+import { t } from './i18n'
 
+/**
+ * The one place the `nutrient.<id>` key convention is written down, which is why
+ * the four components that show a nutrient name call this rather than `t`
+ * themselves (§14: key on ids, render through i18n).
+ */
 export function labelFor(key: NutrientKey): string {
-  return NUTRIENT_LABELS[key]
+  return t(`nutrient.${key}`)
 }
 
 export function unitFor(key: NutrientKey): string {
