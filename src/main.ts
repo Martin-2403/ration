@@ -16,11 +16,15 @@ import './theme/tokens.css'
 import './theme/base.css'
 
 import App from './App.vue'
+import { i18n } from './i18n'
 import router from './router'
 
 const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+// Registered for `useI18n` in components; display helpers reach the same
+// instance directly, so they work in a test without mounting anything.
+app.use(i18n)
 
 app.mount('#app')

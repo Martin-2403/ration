@@ -64,6 +64,18 @@ export default defineConfig({
       },
     }),
   ],
+  // vue-i18n ships its v8 Options-API surface and its production devtools hooks
+  // behind build flags; unset, both stay in the bundle, and neither is reachable
+  // from a `legacy: false` instance. Worth 6.5 kB raw / 1.6 kB gzip — most of
+  // what the i18n layer costs is the core plus the runtime message compiler,
+  // which stays while messages are plain objects (#74).
+  //
+  // __VUE_I18N_FULL_INSTALL__ is left on, at a further 5 kB, so `$t` works in
+  // templates while view copy is still being migrated (#73).
+  define: {
+    __VUE_I18N_LEGACY_API__: 'false',
+    __INTLIFY_PROD_DEVTOOLS__: 'false',
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
