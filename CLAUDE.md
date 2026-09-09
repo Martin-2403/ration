@@ -56,7 +56,12 @@ Verify a green run against the head SHA you actually pushed, not the branch name
   not.
 - Commit subjects and PR titles describe the durable change, from a developer's point
   of view: no WIP or review-time state, no AI attribution, and not addressed to the
-  reviewer. The body explains why (§19).
+  reviewer.
+- **The commit body carries the why** (§19). **The PR body stays short** — what the
+  change does and what was measured, in the third person. It does not flag what
+  deserves attention, narrate who did what, offer the reviewer options, or recap the
+  conversation that produced it. For a docs-only change, one line is right.
+  Alternatives and recommendations go in chat; the record gets the decision taken.
 - `PROJECT.md` may be edited in the PR that makes its text untrue — call the edit out
   in the body. It is a licence to keep the document honest, not to redesign it.
 - Reference sections and issues (§9, #17) where they help a later reader.
