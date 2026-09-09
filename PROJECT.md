@@ -576,6 +576,13 @@ Two separate caches:
   with pinning:** never evict a food the user has actually logged. Guarantees
   offline re-scans and offline history always resolve.
 
+**The durable cache is licence-compatible, and that is not incidental.** ODbL's
+share-alike obligation attaches to a derivative database that is *publicly* used
+(§4.4, §4.5(c), resolved in #21). A cache on the user's own device is never
+distributed, so the obligation is not triggered — which is the same property §10
+relies on for privacy. A server-side cache of the same data would be a different
+question.
+
 **Seed foods are not cache entries.** The starter foods and templates in
 `data/foods.ts` stay in the module and are never copied into IndexedDB. Storing
 them would make them evictable by the LRU above, and would freeze a wrong value
@@ -590,8 +597,8 @@ store, which is one small function.
 - **Region: EU / Germany** for MVP; other regions selectable later (a setting with
   one value for now). Cascades to RDI reference (§5), generic-food fallback table,
   OFF regional data, and food-name language.
-- **[verify]** Generic-food fallback licensing: German **BLS** is licensed/paid;
-  **CIQUAL** (FR) and **USDA** are free. Pick a free table or budget for BLS.
+- Generic-food fallback: **BLS 4.0** is free and German, which matches this
+  region default (resolved, §18, #19). CIQUAL (FR) and USDA are the alternatives.
 
 **Language — three independent axes; no real conflict:**
 
@@ -855,11 +862,20 @@ Out of scope for MVP: e2e and visual-regression testing.
 - **[verify]** EU NRV / D-A-CH reference intake figures — authoritative source.
 - **[verify]** Tolerable upper intake levels (§5) — EFSA or equivalent.
 - **[verify]** Vitamin A/E IU↔µg conversion factors — authoritative source.
-- **[verify]** Generic-food fallback table + its license (BLS paid; CIQUAL/USDA
-  free).
+- **[resolved 2026-09-08, #19]** Generic-food fallback table + its license. The
+  German **BLS 4.0** (Max Rubner-Institut) is free of charge and free of licence
+  barriers, with app and software development named among the permitted uses —
+  7,140 foods, 138 nutrients, and the origin of every data point in 13 categories.
+  Cite as MRI (2025), Bundeslebensmittelschlüssel 4.0, DOI
+  10.25826/Data20251217-134202-0. The paid-licence premise applied to BLS 3.x.
 - **[verify]** OFF nutrition-data schema (recent refactor) — current field names.
-- **[verify]** OFF terms of use — required User-Agent, rate limits, and ODbL
-  attribution/share-alike obligations. A licensing question, not a technical one.
+- **[resolved 2026-09-08, #21]** OFF terms of use. Database under ODbL 1.0,
+  contents under DbCL 1.0, images CC BY-SA 3.0. A descriptive User-Agent is
+  required, `AppName/Version (ContactEmail)`; rate limits are 15 req/min/IP for
+  product reads and 10/min for search. Share-alike (ODbL §4.4) binds only a
+  Derivative Database that is *publicly* used, which the local cache is not
+  (§4.5(c)); displayed figures are a Produced Work and need attribution (§4.3).
+  The attribution surface is #78.
 - **[verify]** Barcode library maintenance status at build time.
 - **[verify]** Browser storage eviction rules, iOS/WebKit and Chrome, installed vs
   not (§10).
