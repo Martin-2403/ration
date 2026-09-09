@@ -1,13 +1,11 @@
 /**
  * Spec-as-test for the nutrient registry (§5).
  *
- * Per §19 the test comes first and the implementation follows, so this file
- * FAILS right now: `src/data/nutrients.ts` does not exist yet. That red state
- * is the intended starting point — building the registry turns it green.
- *
- * What each test demands of your implementation is spelled out in its own
- * comment. Nothing here checks *which* nutrients you track (that is config,
- * §5) — only that every entry obeys the contract the rest of the app relies on.
+ * Written before the registry existed, per §19's order, and kept as the
+ * registry's contract since. Most of it deliberately checks the *shape* of every
+ * entry rather than which nutrients are tracked; the Annex XIII block at the
+ * bottom is the exception, added with #56 once the tracked set stopped being a
+ * judgement call and became a transcription.
  *
  * ── Vitest anatomy, once ──────────────────────────────────────────────────
  *   describe(name, fn)   groups tests; affects output readability only
@@ -32,7 +30,12 @@
  */
 import { describe, it, expect } from 'vitest'
 
-import { isGoalNutrient, NUTRIENTS, USER_GOAL_NUTRIENTS } from '../nutrients'
+import {
+  DECLARATION_NUTRIENTS,
+  isGoalNutrient,
+  NUTRIENTS,
+  USER_GOAL_NUTRIENTS,
+} from '../nutrients'
 
 // §6: one canonical unit per nutrient. This list *is* the contract — if a new
 // unit is genuinely needed, it goes in §6 first, then here. Keeping it in the
@@ -104,16 +107,94 @@ describe('nutrient registry', () => {
     expect(key).toMatch(/^[a-z][a-zA-Z0-9]*$/)
   })
 
-  // The keys were the registry's call to make; these are the ones it picked,
-  // singular and matching Regulation 1169/2011 Annex XIII so the NRV figures
-  // (#16) land on them without a mapping. Asserted here because they are now
-  // stored in goal rows and in every logged total — renaming one is a migration,
-  // not a refactor.
-  it.each(['energy', 'protein', 'carbohydrate', 'fat'])('includes %s as a macro', (key) => {
-    const found = cases.find((c) => c.key === key)
+})
 
-    expect(found, `the registry must define "${key}"`).toBeDefined()
-    expect(found?.def.kind).toBe('macro')
+/**
+ * The tracked set is Annex XIII of Regulation (EU) No 1169/2011 (#56), so it can
+ * be asserted against the regulation rather than against itself.
+ *
+ * The unit column is the point. The annex prints a unit beside every nutrient,
+ * and mg where the regulation says µg is a thousandfold error that renders as a
+ * perfectly plausible number — exactly the failure §17 says tests exist to catch.
+ * Transcribed from OJ L 304, 22.11.2011, p. 61, retrieved 2026-09-08; the same
+ * values appear in the UK-retained rendering of the regulation, checked against
+ * it entry by entry.
+ *
+ * Written out rather than imported from the registry: importing the expectation
+ * from the code under test would assert nothing.
+ */
+const ANNEX_XIII_PART_A: [key: string, unit: string][] = [
+  ['vitaminA', 'µg'],
+  ['vitaminD', 'µg'],
+  ['vitaminE', 'mg'],
+  ['vitaminK', 'µg'],
+  ['vitaminC', 'mg'],
+  ['thiamin', 'mg'],
+  ['riboflavin', 'mg'],
+  ['niacin', 'mg'],
+  ['vitaminB6', 'mg'],
+  ['folicAcid', 'µg'],
+  ['vitaminB12', 'µg'],
+  ['biotin', 'µg'],
+  ['pantothenicAcid', 'mg'],
+  ['potassium', 'mg'],
+  ['chloride', 'mg'],
+  ['calcium', 'mg'],
+  ['phosphorus', 'mg'],
+  ['magnesium', 'mg'],
+  ['iron', 'mg'],
+  ['zinc', 'mg'],
+  ['copper', 'mg'],
+  ['manganese', 'mg'],
+  ['fluoride', 'mg'],
+  ['selenium', 'µg'],
+  ['chromium', 'µg'],
+  ['molybdenum', 'µg'],
+  ['iodine', 'µg'],
+]
+
+/** Part B, in the order the regulation prints it. Energy is kcal by §6. */
+const ANNEX_XIII_PART_B: [key: string, unit: string][] = [
+  ['energy', 'kcal'],
+  ['fat', 'g'],
+  ['saturates', 'g'],
+  ['carbohydrate', 'g'],
+  ['sugars', 'g'],
+  ['protein', 'g'],
+  ['salt', 'g'],
+]
+
+describe('Annex XIII tracked set', () => {
+  it('tracks exactly the nutrients the annex lists, and nothing else', () => {
+    const expected = [...ANNEX_XIII_PART_A, ...ANNEX_XIII_PART_B].map(([key]) => key)
+
+    // Both directions: a missing nutrient leaves a gap the NRV table cannot
+    // fill, and an extra one is a nutrient with no reference value and no
+    // source, which #16 would then have to invent a figure for.
+    expect(Object.keys(NUTRIENTS).sort()).toEqual(expected.sort())
+  })
+
+  it.each(ANNEX_XIII_PART_A)('%s is a micronutrient in %s', (key, unit) => {
+    expect(NUTRIENTS[key as keyof typeof NUTRIENTS].unit).toBe(unit)
+    expect(NUTRIENTS[key as keyof typeof NUTRIENTS].kind).toBe('micro')
+  })
+
+  it.each(ANNEX_XIII_PART_B)('%s is a macronutrient in %s', (key, unit) => {
+    expect(NUTRIENTS[key as keyof typeof NUTRIENTS].unit).toBe(unit)
+    expect(NUTRIENTS[key as keyof typeof NUTRIENTS].kind).toBe('macro')
+  })
+
+  it('declares the mandatory seven in the order a label prints them', () => {
+    // Order is part of the contract: the form and the day summary render in
+    // this sequence, and a label reads energy first and salt last.
+    expect([...DECLARATION_NUTRIENTS]).toEqual(ANNEX_XIII_PART_B.map(([key]) => key))
+  })
+
+  it('keeps salt out of the user-settable goals', () => {
+    // Anticipated in the registry's own comment before salt existed: the goal
+    // set is an explicit list precisely so a macro-shaped nutrient with a real
+    // ceiling cannot become self-settable by being added here.
+    expect(isGoalNutrient('salt' as never)).toBe(false)
   })
 })
 

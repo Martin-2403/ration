@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { NUTRIENTS } from '../data/nutrients'
 import { buildUserFood } from '../user-food'
 
 describe('buildUserFood', () => {
@@ -47,13 +48,10 @@ describe('buildUserFood', () => {
   it('covers every registry nutrient, so nothing is silently untracked', () => {
     const food = buildUserFood({ name: 'Apple', per100g: {} }, 'fixed-id')
 
-    expect(Object.keys(food.per100g).sort()).toEqual([
-      'carbohydrate',
-      'energy',
-      'fat',
-      'protein',
-      'vitaminD',
-    ])
+    // Derived from the registry rather than listed: a hardcoded list makes this
+    // test fail for the wrong reason every time the registry grows, which is
+    // what happened when carbohydrate and fat were added and again at #56.
+    expect(Object.keys(food.per100g).sort()).toEqual(Object.keys(NUTRIENTS).sort())
   })
 
   it('accepts an explicit zero as a real value', () => {

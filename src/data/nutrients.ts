@@ -31,16 +31,61 @@ export interface NutrientDef {
 
 // Ids are stable and language-neutral. Display labels are NOT here — they come
 // from i18n keyed on the id (§14).
+//
+// The set is Annex XIII of Regulation (EU) No 1169/2011 — Part B for the seven
+// that an EU nutrition declaration must carry, Part A point 1 for the vitamins
+// and minerals that may be declared and have a nutrient reference value. Taking
+// the regulation's own list rather than choosing one means the tracked set has
+// an external definition, and the NRV figures (#16) drop onto exactly these
+// keys. Source: OJ L 304, 22.11.2011, p. 61 (#56).
+//
+// Names follow the regulation's spelling, so `thiamin` and `folicAcid` rather
+// than thiamine and folate.
+//
+// `decimals` is display precision only. Grams follow the tenth of a gram a label
+// is printed to; micronutrients follow magnitude, 0 where the NRV is 100 or more
+// and 1 below it, since a tenth of a milligram is noise against 800 mg of
+// calcium and the whole story for 1,1 mg of thiamin.
 export const NUTRIENTS = {
+  // Part B — the mandatory declaration.
   energy: { unit: 'kcal', kind: 'macro', decimals: 0 },
-  protein: { unit: 'g', kind: 'macro', decimals: 1 },
-  // "carbohydrate" and "fat", singular: the keys end up in stored records and
-  // i18n keys, and Regulation 1169/2011 Annex XIII words them that way, so the
-  // NRV figures (#16) will drop straight onto them.
-  carbohydrate: { unit: 'g', kind: 'macro', decimals: 1 },
   fat: { unit: 'g', kind: 'macro', decimals: 1 },
+  saturates: { unit: 'g', kind: 'macro', decimals: 1 },
+  carbohydrate: { unit: 'g', kind: 'macro', decimals: 1 },
+  sugars: { unit: 'g', kind: 'macro', decimals: 1 },
+  protein: { unit: 'g', kind: 'macro', decimals: 1 },
+  salt: { unit: 'g', kind: 'macro', decimals: 1 },
+
+  // Part A point 1 — vitamins.
+  vitaminA: { unit: 'µg', kind: 'micro', decimals: 0 },
   vitaminD: { unit: 'µg', kind: 'micro', decimals: 1 },
-  // ... one entry per nutrient the app can ever track
+  vitaminE: { unit: 'mg', kind: 'micro', decimals: 1 },
+  vitaminK: { unit: 'µg', kind: 'micro', decimals: 1 },
+  vitaminC: { unit: 'mg', kind: 'micro', decimals: 1 },
+  thiamin: { unit: 'mg', kind: 'micro', decimals: 1 },
+  riboflavin: { unit: 'mg', kind: 'micro', decimals: 1 },
+  niacin: { unit: 'mg', kind: 'micro', decimals: 1 },
+  vitaminB6: { unit: 'mg', kind: 'micro', decimals: 1 },
+  folicAcid: { unit: 'µg', kind: 'micro', decimals: 0 },
+  vitaminB12: { unit: 'µg', kind: 'micro', decimals: 1 },
+  biotin: { unit: 'µg', kind: 'micro', decimals: 1 },
+  pantothenicAcid: { unit: 'mg', kind: 'micro', decimals: 1 },
+
+  // Part A point 1 — minerals.
+  potassium: { unit: 'mg', kind: 'micro', decimals: 0 },
+  chloride: { unit: 'mg', kind: 'micro', decimals: 0 },
+  calcium: { unit: 'mg', kind: 'micro', decimals: 0 },
+  phosphorus: { unit: 'mg', kind: 'micro', decimals: 0 },
+  magnesium: { unit: 'mg', kind: 'micro', decimals: 0 },
+  iron: { unit: 'mg', kind: 'micro', decimals: 1 },
+  zinc: { unit: 'mg', kind: 'micro', decimals: 1 },
+  copper: { unit: 'mg', kind: 'micro', decimals: 1 },
+  manganese: { unit: 'mg', kind: 'micro', decimals: 1 },
+  fluoride: { unit: 'mg', kind: 'micro', decimals: 1 },
+  selenium: { unit: 'µg', kind: 'micro', decimals: 1 },
+  chromium: { unit: 'µg', kind: 'micro', decimals: 1 },
+  molybdenum: { unit: 'µg', kind: 'micro', decimals: 1 },
+  iodine: { unit: 'µg', kind: 'micro', decimals: 0 },
 } as const satisfies Record<string, NutrientDef>
 
 // Derived from the registry so that a typo cannot silently invent a nutrient
@@ -69,6 +114,31 @@ export interface ReferenceTarget {
   // nutrient — never infer one (§5).
   upperLimit?: number
 }
+
+/**
+ * The seven an EU nutrition declaration must carry — Annex XIII Part B, in the
+ * order it prints them (#56).
+ *
+ * This is what a surface should offer when a person is reading a label: the
+ * manual-food form mirrors the panel in front of them, and it is the same set
+ * §14 scopes the German OCR vocabulary to. Micronutrients reach a food through
+ * the resolver or the generic table (§4) rather than by being typed.
+ *
+ * Not derived from `kind: 'macro'`, even though it currently coincides: the
+ * grouping is "what the label declares", and a macro-shaped nutrient outside
+ * the declaration would otherwise join this set silently.
+ */
+export const DECLARATION_NUTRIENTS = [
+  'energy',
+  'fat',
+  'saturates',
+  'carbohydrate',
+  'sugars',
+  'protein',
+  'salt',
+] as const satisfies readonly NutrientKey[]
+
+export type DeclarationNutrientKey = (typeof DECLARATION_NUTRIENTS)[number]
 
 /**
  * The nutrients a user may set their own daily target for (§20).
