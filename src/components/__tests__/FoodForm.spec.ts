@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
+import { DECLARATION_NUTRIENTS } from '../../data/nutrients'
 import FoodForm from '../FoodForm.vue'
 
 const fill = async (
@@ -130,7 +131,7 @@ describe('FoodForm', () => {
 
   // Deliberate: a number input hides unparseable text from the app and rejects
   // the decimal comma in some locales. See parse-amount.ts.
-  it.each(['#food-grams', '#food-energy', '#food-protein', '#food-vitaminD'])(
+  it.each(['#food-grams', '#food-energy', '#food-protein', '#food-salt'])(
     '%s is a text input with a decimal keypad, not a number input',
     (id) => {
       const wrapper = mount(FoodForm)
@@ -194,11 +195,24 @@ describe('FoodForm', () => {
     expect(wrapper.text()).toContain('Protein')
   })
 
-  it('offers an input for every tracked nutrient', () => {
+  it('offers exactly the seven a label declares', () => {
     const wrapper = mount(FoodForm)
 
-    expect(wrapper.find('#food-energy').exists()).toBe(true)
-    expect(wrapper.find('#food-protein').exists()).toBe(true)
-    expect(wrapper.find('#food-vitaminD').exists()).toBe(true)
+    // Not "every tracked nutrient", which this asserted while the registry held
+    // five: the registry is the Annex XIII set now, and a form with 34 fields is
+    // not a form anyone fills in (#56). Asserted against the constant so the
+    // form and the declaration cannot drift apart.
+    expect(
+      wrapper.findAll('input[inputmode="decimal"]').map((field) => field.attributes('id')),
+    ).toEqual(['food-grams', ...DECLARATION_NUTRIENTS.map((key) => `food-${key}`)])
+  })
+
+  it('does not ask for a micronutrient', () => {
+    const wrapper = mount(FoodForm)
+
+    // Micronutrients reach a food through the resolver, not by being typed
+    // off a label that does not print them (#80).
+    expect(wrapper.find('#food-vitaminD').exists()).toBe(false)
+    expect(wrapper.find('#food-selenium').exists()).toBe(false)
   })
 })

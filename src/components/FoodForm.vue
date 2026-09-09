@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import { NUTRIENTS, type NutrientKey } from '../data/nutrients'
+import { DECLARATION_NUTRIENTS, type NutrientKey } from '../data/nutrients'
 import { labelFor, unitFor } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
 import type { Food } from '../types'
@@ -9,7 +9,11 @@ import { buildUserFood } from '../user-food'
 
 const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
 
-const keys = Object.keys(NUTRIENTS) as NutrientKey[]
+// The seven a label declares, not every nutrient the registry tracks (#56).
+// This form is for transcribing a panel, and nobody types 34 values off one;
+// micronutrients arrive from the resolver or the generic table (§4). Recording
+// them by hand is #80.
+const keys: NutrientKey[] = [...DECLARATION_NUTRIENTS]
 
 // Raw strings, because the fields are text inputs and we do the parsing (see
 // parse-amount.ts for why a number input is not used here).

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { NUTRIENTS, type NutrientKey, type NutrientTotals } from '../data/nutrients'
+import { DECLARATION_NUTRIENTS, type NutrientKey, type NutrientTotals } from '../data/nutrients'
 import {
   estimatedPercent,
   formatAmount,
@@ -16,7 +16,10 @@ const { totals, loading = false } = defineProps<{
   loading?: boolean
 }>()
 
-const keys = Object.keys(NUTRIENTS) as NutrientKey[]
+// The label declaration rather than the full registry (#56): 33 rows of which
+// most read "No data" is honest and useless at once. The evaluation view is
+// where every nutrient with a target or an intake gets reported.
+const keys: NutrientKey[] = [...DECLARATION_NUTRIENTS]
 
 const energy = computed(() => totals.energy)
 

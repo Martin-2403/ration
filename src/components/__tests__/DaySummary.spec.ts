@@ -25,8 +25,8 @@ describe('DaySummary', () => {
   it('renders no data for a nutrient absent from the totals entirely', () => {
     const wrapper = render({ energy: { amount: 500, bySource: { user: 500 }, missing: 0 } })
 
-    // vitaminD is tracked by the registry but has no entry here.
-    expect(wrapper.text()).toContain('Vitamin D')
+    // Salt is one of the seven the summary shows, with no entry here.
+    expect(wrapper.text()).toContain('Salt')
     expect(wrapper.text()).toContain('No data')
   })
 
@@ -52,7 +52,7 @@ describe('DaySummary', () => {
 
   it('says how many contributors lacked data for a nutrient row', () => {
     const wrapper = render({
-      vitaminD: { amount: 3, bySource: { user: 3 }, missing: 2 },
+      salt: { amount: 3, bySource: { user: 3 }, missing: 2 },
     })
 
     expect(wrapper.text()).toContain('2 without data')
@@ -60,7 +60,7 @@ describe('DaySummary', () => {
 
   it('reports the estimated share of a total', () => {
     const wrapper = render({
-      vitaminD: { amount: 10, bySource: { 'off-estimated': 4, 'off-packaging': 6 }, missing: 0 },
+      salt: { amount: 10, bySource: { 'off-estimated': 4, 'off-packaging': 6 }, missing: 0 },
     })
 
     expect(wrapper.text()).toContain('40% estimated')
@@ -68,7 +68,7 @@ describe('DaySummary', () => {
 
   it('marks an estimated value without relying on colour', () => {
     const wrapper = render({
-      vitaminD: { amount: 10, bySource: { 'off-estimated': 10 }, missing: 0 },
+      salt: { amount: 10, bySource: { 'off-estimated': 10 }, missing: 0 },
     })
 
     // §15: provenance must survive greyscale, so the marker is a class carrying
@@ -78,7 +78,7 @@ describe('DaySummary', () => {
 
   it('does not mark a value with no estimated contribution', () => {
     const wrapper = render({
-      vitaminD: { amount: 10, bySource: { 'off-packaging': 10 }, missing: 0 },
+      salt: { amount: 10, bySource: { 'off-packaging': 10 }, missing: 0 },
     })
 
     expect(wrapper.find('.estimated').exists()).toBe(false)
