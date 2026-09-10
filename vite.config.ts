@@ -43,8 +43,12 @@ export default defineConfig({
         // the icon is shown uncropped. The PNGs are rasterized from
         // public/icon.svg (rounded field, for uncropped use) and
         // public/icon-maskable.svg (full-bleed, mark inside the safe circle).
+        //
         // iOS ignores this array entirely — its icon is the apple-touch-icon
-        // link in index.html.
+        // link in index.html, and that one is rasterized from the *maskable*
+        // source: iOS composites any transparency as black, so the rounded
+        // field's transparent corners would show as black corners behind iOS's
+        // own rounding.
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
