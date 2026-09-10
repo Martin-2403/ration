@@ -464,6 +464,12 @@ Two independent quality axes, both surfaced, neither collapsed into the other:
 - Default sort is largest shortfall first — the "what am I missing" view. Nutrients
   **over** a known limit pin to the top regardless: an exceeded limit is more
   actionable than a small gap.
+- A nutrient **nothing supplied a value for is not a shortfall** and sorts below
+  every measured one, above a nutrient with no target at all. Arithmetically it
+  reads as the largest gap there is, which is the silent-zero mistake in a sort
+  comparator rather than in a value — and once the reference table covered 31
+  nutrients it buried everything measured (#82). A nutrient measured *as* zero
+  stays a shortfall; the difference is whether a contributor supplied the figure.
 - Rendered without a new colour — the bar runs past a marked target line and carries
   an "over" label (§15).
 

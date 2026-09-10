@@ -328,6 +328,59 @@ describe('byUrgency', () => {
     overLimit: scaledLimit !== undefined && amount > scaledLimit,
   })
 
+  /** A nutrient the entries carry no value for: contributors asked, none had one. */
+  const absent = (nutrient: ResolvedTarget['nutrient'], scaledTarget: number, contributors = 2) => ({
+    ...evaluation(nutrient, 0, scaledTarget),
+    intake: { amount: 0, bySource: {}, missing: contributors },
+  })
+
+  /** A nutrient genuinely measured as zero: a contributor supplied the figure. */
+  const measuredZero = (nutrient: ResolvedTarget['nutrient'], scaledTarget: number) => ({
+    ...evaluation(nutrient, 0, scaledTarget),
+    intake: { amount: 0, bySource: { user: 0 }, missing: 0 },
+  })
+
+  it('ranks a measured shortfall above a nutrient with no data', () => {
+    // Both are "0 of target" arithmetically. Only one is a statement about the
+    // diet; the other is a gap in the record, and §9 keeps those axes apart.
+    // Ranking by 1 - intake/target alone put every unmeasured nutrient at the
+    // top, which is the silent-zero mistake moved into the comparator (#82).
+    const sorted = byUrgency([absent('calcium', 800), evaluation('energy', 1900, 2000)])
+
+    expect(sorted.map((e) => e.nutrient)).toEqual(['energy', 'calcium'])
+  })
+
+  it('ranks a nutrient with no data above one with no target', () => {
+    // Still distinguishable: no data is a coverage gap that logging can close,
+    // no target is a nutrient nothing can be said about at all.
+    // Names chosen so the alphabetical tiebreak would give the wrong answer:
+    // "salt" sorts before "zinc", so passing this means the ranking did it.
+    const sorted = byUrgency([evaluation('salt', 3), absent('zinc', 10)])
+
+    expect(sorted.map((e) => e.nutrient)).toEqual(['zinc', 'salt'])
+  })
+
+  it('treats a measured zero as a shortfall, not as missing data', () => {
+    // The §3 line, and the reason the check is on bySource rather than on the
+    // amount: a food genuinely containing no calcium is a measurement, and it
+    // belongs with the shortfalls. sumTotals records its source even at zero.
+    // Again against the alphabetical tiebreak: "calcium" sorts before "zinc",
+    // so the measured zero has to win on rank rather than on name.
+    const sorted = byUrgency([absent('calcium', 800), measuredZero('zinc', 10)])
+
+    expect(sorted.map((e) => e.nutrient)).toEqual(['zinc', 'calcium'])
+  })
+
+  it('still pins an exceeded limit above everything, including absent data', () => {
+    const sorted = byUrgency([
+      absent('calcium', 800),
+      evaluation('selenium', 400, 55, 255),
+      evaluation('energy', 1900, 2000),
+    ])
+
+    expect(sorted.map((e) => e.nutrient)).toEqual(['selenium', 'energy', 'calcium'])
+  })
+
   it('sorts the largest shortfall first', () => {
     const sorted = byUrgency([
       evaluation('energy', 1900, 2000),
