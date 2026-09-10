@@ -185,17 +185,35 @@ export function evaluate(
  */
 export function byUrgency(evaluations: NutrientEvaluation[]): NutrientEvaluation[] {
   /**
+   * Below the [0, 1] a real shortfall occupies, so both sort under anything
+   * that can be ranked, and apart from each other because they are different
+   * situations: NO_DATA is a gap in the record that logging can close, and
+   * NO_TARGET is a nutrient nothing can be said about at all (§9 keeps coverage
+   * and provenance as separate axes from the diet).
+   */
+  const NO_DATA = -0.5
+  const NO_TARGET = -1
+
+  /**
    * The fraction of the target still missing: 1 when nothing has been logged
    * against a known target, 0 once it is reached. Relative rather than absolute
    * because the amounts are not comparable — an energy gap is thousands of kcal
    * and a selenium gap is tens of µg, so ranking by the raw difference sorts by
    * unit size and buries every micronutrient under the macros.
-   *
-   * -1 for a nutrient with no target, which puts it below everything that can be
-   * ranked at all rather than tying it with the ones already met.
    */
   const unmetShare = (evaluation: NutrientEvaluation): number => {
-    if (evaluation.target === undefined || evaluation.target <= 0) return -1
+    if (evaluation.target === undefined || evaluation.target <= 0) return NO_TARGET
+
+    // A nutrient no contributor supplied a value for has no shortfall to rank.
+    // Arithmetically it is "0 of target" and so scores 1, the largest shortfall
+    // there is — which is the silent-zero mistake (§3) reappearing in a sort
+    // comparator rather than in a value, and it buried every measured nutrient
+    // under the unmeasured ones once the reference table was filled (#82).
+    //
+    // Checked on bySource rather than on the amount, because sumTotals records
+    // a contributor's source even when its value is zero: a food genuinely
+    // containing none of something is a measurement and stays a shortfall.
+    if (Object.keys(evaluation.intake.bySource).length === 0) return NO_DATA
 
     return Math.max(1 - evaluation.intake.amount / evaluation.target, 0)
   }
