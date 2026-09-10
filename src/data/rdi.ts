@@ -23,8 +23,40 @@
  * renders as no target rather than as met. The four macros that remain are the
  * same four §20 allows a user to set a goal for, chosen on the same reasoning.
  *
- * `upperLimit` is absent throughout: an upper intake level is a separate
- * authoritative figure (#17), never inferred from a reference intake (§5).
+ * **Upper limits: EFSA, "Overview on Tolerable Upper Intake Levels as derived by
+ * the Scientific Committee on Food (SCF) and the EFSA Panel on Dietetic
+ * Products, Nutrition and Allergies (NDA)", Version 11 (August 2025)**,
+ * retrieved 2026-09-10 from
+ * https://www.efsa.europa.eu/sites/default/files/2024-05/ul-summary-report.pdf
+ * (#17). Adult column. Reproduction of EFSA material requires the source to be
+ * acknowledged, which #78 covers.
+ *
+ * A limit is present only where EFSA's figure applies to total chronic intake
+ * from all dietary sources, which is what the app's totals sum. Nine do. The
+ * rest are absent, and §5's "never infer one" is why rather than an oversight:
+ *
+ * - **Magnesium (250 mg)** applies only to readily dissociable magnesium salts
+ *   added to food, water or supplements, explicitly excluding the magnesium
+ *   naturally present in food. It is also *below* the 375 mg reference intake,
+ *   so comparing a food total against it would report anyone meeting their
+ *   target as over the limit.
+ * - **Folic acid (1000 µg)** applies to folic acid and related forms added to
+ *   foods or used in supplements, not to folate naturally present in food.
+ * - **Vitamin A (3000 µg RE)** applies to preformed vitamin A — retinol and
+ *   retinyl esters — not to the total retinol equivalents food data reports.
+ * - **Niacin** has two limits by form: 900 mg for nicotinamide, 10 mg for
+ *   nicotinic acid. §6 already refuses a form-dependent conversion rather than
+ *   guessing, and the same reasoning applies to a form-dependent ceiling.
+ * - **Iron (40 mg), manganese (8 mg) and fluoride (3.3 mg)** have no UL at all.
+ *   EFSA publishes a *safe level of intake* for each and states that intakes
+ *   above it do not necessarily indicate a risk and cannot be used to
+ *   characterise who is at risk. That is not a limit.
+ *
+ * EFSA sets **no UL for total fat, saturated fatty acids, sugars, protein or
+ * sodium** (Tables 1 and 4), so the three nutrients #16 left without a target
+ * do not gain one here either. They carry intake and no comparison.
+ *
+ * The vitamin E figure carries a footnote that its review is on-going.
  */
 import type { NutrientKey, ReferenceTarget } from './nutrients'
 
@@ -53,14 +85,14 @@ export const REFERENCE_PROFILES: Record<
 
     // Part A point 1 — vitamins, in the annex's order.
     vitaminA: { nutrient: 'vitaminA', target: 800 }, // Vitamin A (μg)
-    vitaminD: { nutrient: 'vitaminD', target: 5 }, // Vitamin D (μg)
-    vitaminE: { nutrient: 'vitaminE', target: 12 }, // Vitamin E (mg)
+    vitaminD: { nutrient: 'vitaminD', target: 5, upperLimit: 100 }, // Vitamin D (μg)
+    vitaminE: { nutrient: 'vitaminE', target: 12, upperLimit: 300 }, // Vitamin E (mg)
     vitaminK: { nutrient: 'vitaminK', target: 75 }, // Vitamin K (μg)
     vitaminC: { nutrient: 'vitaminC', target: 80 }, // Vitamin C (mg)
     thiamin: { nutrient: 'thiamin', target: 1.1 }, // Thiamin (mg)
     riboflavin: { nutrient: 'riboflavin', target: 1.4 }, // Riboflavin (mg)
     niacin: { nutrient: 'niacin', target: 16 }, // Niacin (mg)
-    vitaminB6: { nutrient: 'vitaminB6', target: 1.4 }, // Vitamin B6 (mg)
+    vitaminB6: { nutrient: 'vitaminB6', target: 1.4, upperLimit: 12 }, // Vitamin B6 (mg)
     folicAcid: { nutrient: 'folicAcid', target: 200 }, // Folic acid (μg)
     vitaminB12: { nutrient: 'vitaminB12', target: 2.5 }, // Vitamin B12 (μg)
     biotin: { nutrient: 'biotin', target: 50 }, // Biotin (μg)
@@ -69,18 +101,19 @@ export const REFERENCE_PROFILES: Record<
     // Part A point 1 — minerals, in the annex's order.
     potassium: { nutrient: 'potassium', target: 2000 }, // Potassium (mg)
     chloride: { nutrient: 'chloride', target: 800 }, // Chloride (mg)
-    calcium: { nutrient: 'calcium', target: 800 }, // Calcium (mg)
+    calcium: { nutrient: 'calcium', target: 800, upperLimit: 2500 }, // Calcium (mg)
     phosphorus: { nutrient: 'phosphorus', target: 700 }, // Phosphorus (mg)
     magnesium: { nutrient: 'magnesium', target: 375 }, // Magnesium (mg)
     iron: { nutrient: 'iron', target: 14 }, // Iron (mg)
-    zinc: { nutrient: 'zinc', target: 10 }, // Zinc (mg)
-    copper: { nutrient: 'copper', target: 1 }, // Copper (mg)
+    zinc: { nutrient: 'zinc', target: 10, upperLimit: 25 }, // Zinc (mg)
+    copper: { nutrient: 'copper', target: 1, upperLimit: 5 }, // Copper (mg)
     manganese: { nutrient: 'manganese', target: 2 }, // Manganese (mg)
     fluoride: { nutrient: 'fluoride', target: 3.5 }, // Fluoride (mg)
-    selenium: { nutrient: 'selenium', target: 55 }, // Selenium (μg)
+    selenium: { nutrient: 'selenium', target: 55, upperLimit: 255 }, // Selenium (μg)
     chromium: { nutrient: 'chromium', target: 40 }, // Chromium (μg)
-    molybdenum: { nutrient: 'molybdenum', target: 50 }, // Molybdenum (μg)
-    iodine: { nutrient: 'iodine', target: 150 }, // Iodine (μg)
+    // EFSA states the molybdenum UL as 0.6 mg/d; converted to the canonical µg.
+    molybdenum: { nutrient: 'molybdenum', target: 50, upperLimit: 600 }, // Molybdenum (μg)
+    iodine: { nutrient: 'iodine', target: 150, upperLimit: 600 }, // Iodine (μg)
   },
 }
 
