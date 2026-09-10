@@ -17,6 +17,19 @@ const entry = (at: number, energy: number): NewLogEntry => ({
   totals: { energy: { amount: energy, bySource: { user: energy }, missing: 0 } },
 })
 
+/**
+ * An entry carrying only salt: one of the three nutrients Annex XIII prints a
+ * figure for without a direction, so #16 gave them no target (#17 supplies a
+ * limit instead). This is what a nutrient with intake and no target looks like
+ * now that every other tracked nutrient has a reference figure.
+ */
+const saltOnly = (at: number, salt: number): NewLogEntry => ({
+  name: 'Crackers',
+  timestamp: at,
+  items: [{ kind: 'food', foodId: 'oats', grams: 50 }],
+  totals: { salt: { amount: salt, bySource: { user: salt }, missing: 0 } },
+})
+
 const midday = (dayOffset: number) => addLocalDays(startOfLocalDay(), dayOffset) + 12 * 3_600_000
 
 const render = async () => {
@@ -69,26 +82,35 @@ describe('EvaluationView', () => {
     expect(wrapper.findAll('.track')).toHaveLength(0)
   })
 
-  it('orders an exceeded limit above a shortfall', async () => {
-    // Two nutrients: energy short of its goal, vitamin D over a known limit.
-    await nutrientGoals.put({ nutrient: 'energy', target: 2000 })
+  it('orders the largest relative shortfall first, and the unrankable last', async () => {
+    // Renamed: this claimed to order an exceeded limit, which it never did —
+    // no upper limits exist until #17, so nothing could be over one. What it
+    // can now assert is the ordering §9 actually specifies, against real
+    // reference figures: energy 500 of 2000 is 75% unmet, protein 45 of 50 is
+    // 10% unmet, and salt has intake but no target at all.
     await log.add({
       name: 'Day',
       timestamp: midday(-1),
       items: [],
       totals: {
         energy: { amount: 500, bySource: { user: 500 }, missing: 0 },
-        vitaminD: { amount: 300, bySource: { user: 300 }, missing: 0 },
+        protein: { amount: 45, bySource: { user: 45 }, missing: 0 },
+        salt: { amount: 3, bySource: { user: 3 }, missing: 0 },
       },
     })
     const wrapper = await render()
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('500'))
 
-    // No reference figures exist yet (#16), so vitamin D has no target and
-    // sorts last — energy, which can be ranked, comes first.
     const labels = wrapper.findAll('.label').map((label) => label.text())
-    expect(labels).toEqual(['Energy', 'Vitamin D'])
+
+    // Relative, not absolute: ranking by the raw gap would sort by unit size
+    // and bury every micronutrient under the macros.
+    expect(labels.indexOf('Energy')).toBeLessThan(labels.indexOf('Protein'))
+
+    // Below everything that can be ranked at all, rather than tied with the
+    // nutrients already met.
+    expect(labels[labels.length - 1]).toBe('Salt')
   })
 
   it('switches to the rolling 30-day window', async () => {
@@ -111,33 +133,13 @@ describe('EvaluationView', () => {
     expect(windowButton(wrapper, '30 days').attributes('aria-pressed')).toBe('false')
   })
 
-  it('says what to do when there is nothing to compare', async () => {
-    await log.add({ name: 'Empty', timestamp: midday(-1), items: [], totals: {} })
-    const wrapper = await render()
-
-    expect(wrapper.text()).toContain('1 of 7 days logged')
-    expect(wrapper.text()).toContain('Set a daily goal in Settings')
-  })
-
-  it('does not claim a comparison when nothing has a target', async () => {
-    await log.add(entry(midday(-1), 1800))
-    const wrapper = await render()
-
-    await vi.waitFor(() => expect(wrapper.text()).toContain('1800'))
-
-    // The reference table is empty until #16, so a logged day with no goal set
-    // is the ordinary case — and saying "against your targets" would describe
-    // a comparison that is not happening.
-    expect(wrapper.text()).not.toContain('of your targets')
-    expect(wrapper.text()).toContain('Nothing to compare them against yet')
-  })
-
   it('renders intake with no target rather than hiding it', async () => {
-    await log.add(entry(midday(-1), 1800))
+    await log.add(saltOnly(midday(-1), 3))
     const wrapper = await render()
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('1800'))
-    // Dropping it would hide logged intake just because no goal is set.
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Salt'))
+    // Dropping it would hide logged intake for the three nutrients #16 left
+    // without a direction, which is the opposite of what §3 asks for.
     expect(wrapper.text()).toContain('No target')
   })
 })

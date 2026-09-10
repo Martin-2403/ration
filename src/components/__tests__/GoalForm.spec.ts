@@ -42,12 +42,15 @@ describe('GoalForm', () => {
     expect(fieldFor(wrapper, 'vitaminD').exists()).toBe(false)
   })
 
-  it('reports no target for a nutrient without a goal', async () => {
+  it('names the reference figure, and whose it is, when there is no goal', async () => {
     const wrapper = await render()
 
-    // The reference table is empty until #16, so there is nothing to fall back
-    // to — and that reads as no target, never as zero (§3).
-    expect(rowFor(wrapper, 'energy').text()).toContain('No target yet')
+    // Now that #16 has landed there is something to fall back to, and the row
+    // has to say on whose authority — a reference value is not the user's own
+    // number, and §3's provenance discipline applies to targets as much as to
+    // intake. This asserted "No target yet" while the table was empty.
+    expect(rowFor(wrapper, 'energy').text()).toContain('Reference: 2000 kcal')
+    expect(rowFor(wrapper, 'energy').text()).not.toContain('Your goal')
   })
 
   it('seeds a field from the stored goal', async () => {
@@ -117,7 +120,11 @@ describe('GoalForm', () => {
 
     await rowFor(wrapper, 'fat').find('button.ghost').trigger('click')
 
-    await vi.waitFor(() => expect(rowFor(wrapper, 'fat').text()).toContain('No target yet'))
+    // Clearing a goal reveals the reference figure rather than removing the
+    // target: the row goes back to being measured against Annex XIII, which is
+    // what resolveTarget does once #16 gave it figures to fall back to.
+    await vi.waitFor(() => expect(rowFor(wrapper, 'fat').text()).toContain('Reference: 70.0 g'))
+    expect(rowFor(wrapper, 'fat').text()).not.toContain('Your goal')
     expect((fieldFor(wrapper, 'fat').element as HTMLInputElement).value).toBe('')
   })
 

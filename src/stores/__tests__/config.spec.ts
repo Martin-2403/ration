@@ -28,12 +28,24 @@ describe('config store', () => {
     expect(store.goalNutrients).not.toContain('vitaminD')
   })
 
-  it('has no targets before anything is configured', async () => {
+  it('starts from the reference table, before anything is configured', async () => {
     const store = useConfigStore()
 
     await vi.waitFor(() => expect(store.loading).toBe(false))
-    // Empty while the reference table waits on #16 — not a set of zeroes.
-    expect(store.targets).toEqual({})
+
+    // Was empty while the reference figures waited on #16. Every target is
+    // attributed to the reference rather than the user, which is what lets the
+    // UI say on whose authority a comparison is being made (§3).
+    expect(store.targets.energy).toEqual({
+      nutrient: 'energy',
+      target: 2000,
+      origin: 'reference',
+      upperLimit: undefined,
+    })
+
+    // Absent, not zero: the annex prints a figure for salt but no direction,
+    // so it has no target until #17 supplies a limit.
+    expect(store.targets.salt).toBeUndefined()
   })
 
   it('picks up a goal it saved, attributed to the user', async () => {
@@ -57,15 +69,18 @@ describe('config store', () => {
     expect(store.goals).toHaveLength(1)
   })
 
-  it('drops the target when a goal is cleared', async () => {
+  it('falls back to the reference figure when a goal is cleared', async () => {
     const store = useConfigStore()
-    await store.setGoal('fat', 70)
-    await vi.waitFor(() => expect(store.targets.fat?.target).toBe(70))
+    await store.setGoal('fat', 120)
+    await vi.waitFor(() => expect(store.targets.fat?.origin).toBe('user'))
 
     await store.clearGoal('fat')
 
-    // Falls back to the reference table, which is empty, so no target at all.
-    await vi.waitFor(() => expect(store.targets.fat).toBeUndefined())
+    // The reference table used to be empty, so clearing a goal left no target.
+    // It now reveals the annex figure again, and the origin has to come back
+    // with it — a stale 'user' would credit the reference to the user.
+    await vi.waitFor(() => expect(store.targets.fat?.origin).toBe('reference'))
+    expect(store.targets.fat?.target).toBe(70)
   })
 
   it('refuses a target of zero or below', async () => {
