@@ -1,8 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect x="0" y="0" width="512" height="512" fill="#146C6A" />
-  <g fill="#FFFFFF">
-    <rect x="136" y="172" width="240" height="40" rx="20" />
-    <rect x="136" y="236" width="176" height="40" rx="20" />
-    <rect x="136" y="300" width="104" height="40" rx="20" />
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Ration">
+  <!-- Full bleed: an Android launcher crops this to a circle, squircle or
+       teardrop, so the field has to reach every edge and the mark has to sit
+       inside the safe circle at 80% of the canvas. Same art as icon.svg, which
+       is padded for uncropped use instead. -->
+  <rect width="512" height="512" fill="#146C6A"/>
+  <g fill="#F4F7F7">
+    <rect x="88" y="208" width="336" height="96" rx="48" fill-opacity="0.3"/>
+    <rect x="88" y="208" width="204" height="96" rx="48"/>
+    <rect x="324" y="168" width="60" height="176" rx="30"/>
   </g>
 </svg>
