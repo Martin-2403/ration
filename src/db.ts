@@ -70,6 +70,16 @@ export interface FoodRepository {
   findByBarcode(barcode: string): Promise<Food | undefined>
   /** Upsert. The resolver writes back whatever it resolved (§4). */
   put(food: Food): Promise<void>
+  /**
+   * Every stored food, for searching by name (#40).
+   *
+   * A whole-table read rather than an indexed query: the schema indexes `id`
+   * and `barcode` only, and names need substring and diacritic-insensitive
+   * matching, which no Dexie index provides. The cache holds what one person
+   * has eaten, so the scan is small — but it is a scan, and a name index plus a
+   * schema version becomes worth it if that stops being true.
+   */
+  all(): Promise<Food[]>
 }
 
 export interface MealTemplateRepository {
@@ -104,6 +114,7 @@ export const foods: FoodRepository = {
   async put(food) {
     await db.foods.put(plain(food))
   },
+  all: () => db.foods.toArray(),
 }
 
 export const mealTemplates: MealTemplateRepository = {
