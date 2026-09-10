@@ -18,6 +18,12 @@ coverage/
 .idea/
 .vscode/
 
+# Assistant working directory: per-machine settings, scratch worktrees, and a
+# launch config that pins a local interpreter path. Decided in #70 — a fresh
+# clone gets no preview config, which is the accepted cost of keeping machine
+# specifics out of the repo.
+.claude/
+
 # OS
 .DS_Store
 
