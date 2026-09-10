@@ -47,11 +47,44 @@ describe('LogView', () => {
     expect(wrapper.find('#log-date').attributes('max')).toBe(toISODate())
   })
 
-  it('offers a choice per meal template plus hand entry', async () => {
+  it('offers a choice per meal template, a saved food, and hand entry', async () => {
     const wrapper = await render()
 
     expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
+    expect(optionNamed(wrapper, 'A food you have already')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeDefined()
+  })
+
+  it('offers the saved food before hand entry', async () => {
+    const wrapper = await render()
+    const labels = wrapper.findAll('.options button').map((button) => button.text())
+
+    // Reaching for the form first is what fills the cache with copies of the
+    // same apple, which is the cause #40 removes rather than cleaning up after.
+    expect(labels.findIndex((l) => l.includes('already'))).toBeLessThan(
+      labels.findIndex((l) => l.includes('by hand')),
+    )
+  })
+
+  it('logs a saved food against the chosen day', async () => {
+    const wrapper = await render()
+    await wrapper.find('#log-date').setValue(yesterday())
+    await optionNamed(wrapper, 'A food you have already').trigger('click')
+    await flushPromises()
+
+    const banana = wrapper
+      .findAll('.results button')
+      .find((button) => button.text().includes('Banana'))!
+    await banana.trigger('click')
+    await wrapper.find('#picker-grams').setValue('120')
+    await wrapper.find('button.primary').trigger('click')
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+    const [entry] = await db.logEntries.toArray()
+    // Backdating is the view's job, not the picker's — the same contract
+    // FoodForm has, so neither component knows about #61.
+    expect(entry!.timestamp).toBe(localMiddayFromISODate(yesterday()))
+    expect(entry!.items[0]).toMatchObject({ foodId: 'banana', grams: 120 })
   })
 
   it('logs a meal against today at the time of the write', async () => {

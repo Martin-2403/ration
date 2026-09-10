@@ -13,6 +13,7 @@
 import { computed, ref } from 'vue'
 
 import FoodForm from '../components/FoodForm.vue'
+import FoodPicker from '../components/FoodPicker.vue'
 import MealBuilder from '../components/MealBuilder.vue'
 import { SEED_TEMPLATES } from '../data/foods'
 import { localMiddayFromISODate, toISODate } from '../dates'
@@ -31,7 +32,9 @@ const date = ref(toISODate())
 /** Future dates are refused: an entry that has not happened is a plan, not intake. */
 const today = toISODate()
 
-const choice = ref<{ kind: 'template'; template: MealTemplate } | { kind: 'food' } | undefined>()
+const choice = ref<
+  { kind: 'template'; template: MealTemplate } | { kind: 'food' } | { kind: 'stored' } | undefined
+>()
 const logged = ref<{ name: string; date: string } | undefined>()
 
 const validDate = computed(() => localMiddayFromISODate(date.value) !== undefined)
@@ -95,6 +98,14 @@ async function logFood(food: Food, grams: number) {
           </button>
         </li>
         <li>
+          <!-- Above hand entry on purpose: reaching for the form first is what
+               fills the cache with copies of the same apple (#40). -->
+          <button type="button" @click="choice = { kind: 'stored' }">
+            A food you have already
+            <span class="detail">Search what is saved</span>
+          </button>
+        </li>
+        <li>
           <button type="button" @click="choice = { kind: 'food' }">
             A food by hand
             <span class="detail">Type in the values yourself</span>
@@ -111,6 +122,8 @@ async function logFood(food: Food, grams: number) {
           :eaten-at="backdatedTo"
           @logged="finish(choice.kind === 'template' ? choice.template.name : '')"
         />
+
+        <FoodPicker v-else-if="choice.kind === 'stored'" @submit="logFood" />
 
         <FoodForm v-else @submit="logFood" />
       </template>
