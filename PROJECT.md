@@ -610,8 +610,11 @@ store, which is one small function.
 - **Region: EU / Germany** for MVP; other regions selectable later (a setting with
   one value for now). Cascades to RDI reference (§5), generic-food fallback table,
   OFF regional data, and food-name language.
-- Generic-food fallback: **BLS 4.0** is free and German, which matches this
-  region default (resolved, §18, #19). CIQUAL (FR) and USDA are the alternatives.
+- Generic-food table: **BLS 4.0**, free and German, matching this region default
+  (resolved, §18, #19). One table, no fallback — a second would add a provenance
+  axis and a merge order for no present benefit. CIQUAL (FR) and USDA remain
+  candidates for *other* regions, which makes the table part of the region
+  setting rather than a fallback chain (#88, out of MVP scope).
 
 **Language — three independent axes; no real conflict:**
 
