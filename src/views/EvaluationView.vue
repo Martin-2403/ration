@@ -69,6 +69,15 @@ const hasAnyTarget = computed(() =>
           </p>
         </template>
 
+        <!-- Both this branch and the hasAnyTarget fallback below became
+             unreachable when #16 filled the reference table: evaluate() reports
+             every nutrient with a target *or* an intake, and 31 of the 34
+             tracked nutrients now have a reference figure, so there is always
+             something to compare once a day is logged. Kept rather than deleted
+             because #55 can reach them again — narrowing the tracked set to the
+             three that carry no direction empties the comparison entirely. Both
+             are consequently untested; no state the store can be put into
+             renders them. -->
         <template v-else-if="evaluations.length === 0">
           <p class="explain">
             Nothing to compare yet. Set a daily goal in Settings, or log something that carries

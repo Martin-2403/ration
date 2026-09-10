@@ -252,8 +252,13 @@ in a different direction.
 - MVP: EU **NRVs** (Regulation 1169/2011, Annex XIII) — a single population value,
   simplest to start.
 - Later: German **D-A-CH** values (DGE), which are age/sex-specific.
-- **[verify]** Actual NRV/DACH figures must come from the authoritative source
-  (EU regulation text / DGE). Do not invent.
+- The NRV figures are transcribed in `data/rdi.ts` from Regulation (EU)
+  No 1169/2011, Annex XIII, OJ L 304, 22.11.2011, p. 61 (resolved, #16).
+  Saturates, sugars and salt are deliberately absent: the annex prints a figure
+  for each without saying which direction it points, and both fields carry one.
+  They get an `upperLimit` from #17 instead.
+- **[verify]** D-A-CH figures must still come from the authoritative source
+  (DGE). Do not invent.
 
 ---
 
@@ -859,7 +864,11 @@ Out of scope for MVP: e2e and visual-regression testing.
 
 ## 18. External dependencies to resolve (not to invent)
 
-- **[verify]** EU NRV / D-A-CH reference intake figures — authoritative source.
+- **[resolved 2026-09-10, #16]** EU NRV reference intake figures, from
+  Regulation (EU) No 1169/2011, Annex XIII (OJ L 304, 22.11.2011, p. 61), in
+  `data/rdi.ts` under the `eu-nrv-adult` profile. **[verify]** D-A-CH figures
+  remain open — age- and sex-specific, and a second profile rather than a
+  replacement.
 - **[verify]** Tolerable upper intake levels (§5) — EFSA or equivalent.
 - **[verify]** Vitamin A/E IU↔µg conversion factors — authoritative source.
 - **[resolved 2026-09-08, #19]** Generic-food fallback table + its license. The
