@@ -39,3 +39,67 @@ export function buildUserFood(input: UserFoodInput, id: string = crypto.randomUU
 
   return { id, name: input.name.trim(), per100g }
 }
+
+/** What a surface collected for a revision: a name and the values it holds. */
+export interface FoodRevision {
+  name: string
+  /**
+   * The nutrients this surface actually offered a field for.
+   *
+   * Load-bearing, not bookkeeping. The manual form shows the seven a label
+   * declares (#56), so revising a barcode-resolved food through it would
+   * otherwise erase the twenty-seven micronutrients it never asked about —
+   * §3's difference between "asked, no answer" and "never considered", and the
+   * distinction #80 anticipated becoming load-bearing.
+   */
+  asked: readonly NutrientKey[]
+  /** Per-100g values, in each nutrient's canonical unit (§6). Absent = blank. */
+  per100g: Partial<Record<NutrientKey, number>>
+}
+
+/**
+ * A food built from an existing one (#51).
+ *
+ * Used for both halves of that issue, and the only difference between them is
+ * the id: pass a new one to clone, pass the original's to correct it in place.
+ * Correcting is safe despite appearances — log entries snapshot their totals
+ * (§9), so it changes what future logs resolve to and never rewrites history.
+ *
+ * **A value the user did not touch keeps its original source; a value they
+ * changed becomes `'user'`.** Copying `off-packaging` onto an edited figure
+ * would claim a label was read for a number nobody looked at, which is the
+ * false confidence §3 exists to prevent. Retagging the whole food would be
+ * safer still, but it throws away real provenance for the figures that
+ * genuinely carry over — a clone of a well-sourced yoghurt at a different fat
+ * percentage has one changed number and a dozen that are still label-derived.
+ */
+export function reviseFood(
+  original: Food,
+  input: FoodRevision,
+  id: string = original.id,
+): Food {
+  // Starts from what the original recorded, so a nutrient outside `asked`
+  // carries over untouched rather than being dropped or blanked.
+  const per100g: NutrientMap = { ...original.per100g }
+
+  for (const key of input.asked) {
+    const value = input.per100g[key]
+    const before = original.per100g[key]
+
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      // Cleared, or never filled. Recorded as unknown rather than omitted, and
+      // never as zero — the same boundary buildUserFood guards (§3).
+      per100g[key] = { value: 0, source: 'unknown' }
+      continue
+    }
+
+    // `source !== 'unknown'` is load-bearing: an unknown value is stored as 0,
+    // so without it, typing a real 0 over an unknown would inherit `unknown`
+    // and a measured zero would be recorded as no data at all.
+    const unchanged = before !== undefined && before.source !== 'unknown' && before.value === value
+
+    per100g[key] = unchanged ? { ...before } : { value, source: 'user' }
+  }
+
+  return { ...original, id, name: input.name.trim(), per100g }
+}
