@@ -245,8 +245,16 @@ in a different direction.
 - The app **flags the number, it does not prescribe.** Same discipline as §11: no
   dosing advice, no causal claim, point at a healthcare provider for anything that
   looks off. This holds app-wide, not just in the lab view.
-- **[verify]** Upper-limit figures need an authoritative source (EFSA tolerable
-  upper intake levels for the EU framework) — same rule as the targets themselves.
+- Upper limits are transcribed in `data/rdi.ts` from EFSA's *Overview on
+  Tolerable Upper Intake Levels*, Version 11 (August 2025) (resolved, #17). A
+  limit is recorded only where EFSA's figure applies to total chronic intake
+  from all dietary sources, which is what the app sums — nine do. Four ULs exist
+  but measure a narrower quantity (magnesium and folic acid cover only the added
+  forms, vitamin A only preformed retinol, niacin differs by form), and iron,
+  manganese and fluoride have a *safe level of intake* rather than a UL, which
+  EFSA states cannot be used to characterise who is at risk. Those stay absent:
+  §5's rule against inferring a limit applies to a figure that measures
+  something other than what is being compared, not only to a missing one.
 
 **Reference for EU/Germany:**
 - MVP: EU **NRVs** (Regulation 1169/2011, Annex XIII) — a single population value,
@@ -869,7 +877,12 @@ Out of scope for MVP: e2e and visual-regression testing.
   `data/rdi.ts` under the `eu-nrv-adult` profile. **[verify]** D-A-CH figures
   remain open — age- and sex-specific, and a second profile rather than a
   replacement.
-- **[verify]** Tolerable upper intake levels (§5) — EFSA or equivalent.
+- **[resolved 2026-09-10, #17]** Tolerable upper intake levels, from EFSA's
+  *Overview on Tolerable Upper Intake Levels*, Version 11 (August 2025). Nine
+  apply to total intake and are in `data/rdi.ts`; the rest are deliberately
+  absent, with the reason recorded per nutrient. EFSA derives **no UL** for
+  total fat, saturated fatty acids, sugars, protein or sodium, so the three
+  nutrients #16 left without a target gain no limit either.
 - **[verify]** Vitamin A/E IU↔µg conversion factors — authoritative source.
 - **[resolved 2026-09-08, #19]** Generic-food fallback table + its license. The
   German **BLS 4.0** (Max Rubner-Institut) is free of charge and free of licence
