@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+import type { NutrientKey } from '../data/nutrients'
 import { findFoods } from '../food-lookup'
-import { formatAmount } from '../nutrient-display'
+import { formatAmount, labelFor } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
 import { useLogStore } from '../stores/log'
 import { nutrientsFor, sumTotals } from '../totals'
@@ -16,6 +17,13 @@ const store = useLogStore()
 const foods = ref(new Map<string, Food>())
 
 /**
+ * Separate from `foods.size`, which is 0 both before the lookup and for an
+ * entry whose foods have all been deleted — and those mean opposite things to
+ * the warning below.
+ */
+const loaded = ref(false)
+
+/**
  * What the user has typed, per item, index-aligned with entry.items. Raw
  * strings, because the fields are text inputs and we do the parsing (see
  * parse-amount.ts for why a number input is not used here).
@@ -27,6 +35,7 @@ const grams = ref<string[]>(
 onMounted(async () => {
   const ids = entry.items.flatMap((item) => (item.kind === 'food' ? [item.foodId] : []))
   foods.value = await findFoods(ids)
+  loaded.value = true
 })
 
 const rows = computed(() =>
@@ -63,6 +72,63 @@ const notNumeric = computed(() =>
 // no quantity contributes nothing and should be removed instead of zeroed.
 const canSave = computed(() =>
   parsed.value.every((amount) => !amount || (amount.kind === 'number' && amount.value > 0)),
+)
+
+/**
+ * What the entry's own amounts resolve to against the food data as it stands
+ * now — the stored snapshot recomputed without changing anything (#41).
+ */
+const atStoredAmounts = computed(() => {
+  if (!loaded.value) return undefined
+
+  return sumTotals(
+    entry.items.map((item) => {
+      if (item.kind !== 'food') return {}
+
+      const food = foods.value.get(item.foodId)
+
+      return food ? nutrientsFor(food, item.grams) : {}
+    }),
+  )
+})
+
+/**
+ * Nutrients whose stored figure no longer matches what the food data gives.
+ *
+ * §9 forbids upstream data rewriting history on its own, and saving an edit is
+ * the user asking for a rewrite — but they asked about grams, not about the
+ * values, and nothing said the rest had moved.
+ */
+const moved = computed<NutrientKey[]>(() => {
+  const now = atStoredAmounts.value
+  if (!now) return []
+
+  const keys = new Set([...Object.keys(entry.totals), ...Object.keys(now)]) as Set<NutrientKey>
+
+  return [...keys].filter((key) => {
+    const before = entry.totals[key]?.amount ?? 0
+    const after = now[key]?.amount ?? 0
+
+    // Identical inputs give identical output, so any real difference means the
+    // food changed; the tolerance only absorbs float noise from re-scaling.
+    return Math.abs(after - before) > 1e-9
+  })
+})
+
+/**
+ * Items whose food does not resolve any more — a hand-entered food deleted, or
+ * a seed dropped in a later release.
+ *
+ * Worse than a changed value and worth saying separately: a revision
+ * re-resolves every item, so saving replaces whatever these contributed with
+ * nothing at all.
+ */
+const unresolved = computed(() =>
+  loaded.value
+    ? entry.items.flatMap((item) =>
+        item.kind === 'food' && !foods.value.has(item.foodId) ? [item.foodId] : [],
+      )
+    : [],
 )
 
 /** Preview of what saving would store, so the change is visible before it lands. */
@@ -119,6 +185,19 @@ async function save() {
       <span v-else class="amount muted">not editable yet</span>
     </div>
 
+    <!-- Stated before the save button rather than after it, because it changes
+         what saving means. Text, not a colour (§15). -->
+    <p v-if="unresolved.length > 0" class="warning" role="status">
+      {{ unresolved.length === 1 ? 'One food in this entry' : `${unresolved.length} foods here` }}
+      no longer exists. Saving will drop what
+      {{ unresolved.length === 1 ? 'it' : 'they' }} contributed, leaving those nutrients with no
+      data.
+    </p>
+    <p v-else-if="moved.length > 0" class="warning" role="status">
+      This food's values have changed since this was logged. Saving will update
+      {{ moved.map((key) => labelFor(key)).join(', ') }} too.
+    </p>
+
     <div class="footer">
       <span v-if="preview" class="preview">
         {{ formatAmount('energy', preview.amount) }} kcal
@@ -146,6 +225,14 @@ async function save() {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) 0;
+}
+
+/* The one status tone that is not "on target" (§15). Carried by the sentence
+   rather than the colour, which only supplements it. */
+.warning {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-caption);
+  color: var(--status-under);
 }
 
 .label {
