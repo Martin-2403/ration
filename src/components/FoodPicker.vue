@@ -19,7 +19,19 @@ import { formatAmount } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
 import type { Food } from '../types'
 
-const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
+const { purpose = 'log' } = defineProps<{
+  /**
+   * What choosing a food is for. `log` takes an amount and logs it; `choose`
+   * hands the food back so the caller can do something else with it — cloning
+   * or correcting it (#51), and later swapping the food in an existing entry.
+   */
+  purpose?: 'log' | 'choose'
+}>()
+
+const emit = defineEmits<{
+  submit: [food: Food, grams: number]
+  select: [food: Food]
+}>()
 
 const query = ref('')
 const matches = ref<FoodMatch[]>([])
@@ -68,6 +80,13 @@ const chosenEnergy = computed(() => {
 function log() {
   if (chosen.value && grams.value !== undefined) emit('submit', chosen.value.food, grams.value)
 }
+
+function pick(match: FoodMatch) {
+  // In `choose` mode the amount step never appears: the caller owns whatever
+  // comes next, and asking for grams here would collect something nobody uses.
+  if (purpose === 'choose') emit('select', match.food)
+  else chosen.value = match
+}
 </script>
 
 <template>
@@ -92,7 +111,7 @@ function log() {
 
       <ul v-if="matches.length > 0" class="results">
         <li v-for="match in matches" :key="match.food.id">
-          <button type="button" @click="chosen = match">
+          <button type="button" @click="pick(match)">
             <span class="name">{{ match.food.name }}</span>
             <span class="detail">
               <!-- Which of §13's two paths it came from. Not provenance per

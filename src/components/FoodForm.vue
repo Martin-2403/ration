@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 
 import { DECLARATION_NUTRIENTS, type NutrientKey } from '../data/nutrients'
 import { labelFor, unitFor } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
 import type { Food } from '../types'
-import { buildUserFood } from '../user-food'
+import { buildUserFood, reviseFood } from '../user-food'
+
+const { source } = defineProps<{
+  /**
+   * A food to start from (#51). Present for a clone or a correction, absent
+   * when entering something new.
+   */
+  source?: Food
+}>()
 
 const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
 
@@ -20,6 +28,36 @@ const keys: NutrientKey[] = [...DECLARATION_NUTRIENTS]
 const name = ref('')
 const grams = ref('')
 const values = ref<Record<string, string>>({})
+
+/**
+ * Prefills from the source so only the figures that differ have to be typed.
+ *
+ * `String(value)` rather than formatAmount: display rounding would change a
+ * value on the way in, and reviseFood decides what counts as edited by
+ * comparing against the original — so a rounded prefill would silently retag
+ * every rounded figure as the user's own.
+ */
+watchEffect(() => {
+  if (!source) return
+
+  name.value = source.name
+  values.value = Object.fromEntries(
+    keys.map((key) => {
+      const stored = source.per100g[key]
+
+      // An unknown value is stored as 0; showing that would put a zero in front
+      // of the user for a figure nobody knows (§3).
+      return [key, stored && stored.source !== 'unknown' ? String(stored.value) : '']
+    }),
+  )
+})
+
+/**
+ * A clone under the source's own name is the duplicate #40 set out to remove,
+ * arriving by another route — two "Milk, 3.5%" in the picker, distinguishable
+ * only by their nutrients.
+ */
+const nameIsUnchanged = computed(() => source !== undefined && name.value.trim() === source.name)
 
 const parsedGrams = computed(() => parseAmount(grams.value))
 
@@ -62,11 +100,12 @@ const canSubmit = computed(() => {
   return parsedGrams.value.kind === 'number' && parsedGrams.value.value > 0
 })
 
-function submit() {
+function submit(mode: 'new' | 'update' = 'new') {
   if (!canSubmit.value) return
+  if (mode === 'new' && nameIsUnchanged.value) return
 
   // Only fields that parsed to a number are passed on. A blank becomes an absent
-  // key, which buildUserFood records as unknown — never as zero (§3).
+  // key, recorded as unknown — never as zero (§3).
   const per100g: Partial<Record<NutrientKey, number>> = {}
   for (const { key, parsed } of parsedValues.value) {
     if (parsed.kind === 'number') per100g[key] = parsed.value
@@ -75,7 +114,18 @@ function submit() {
   const amount = parsedGrams.value
   if (amount.kind !== 'number') return
 
-  emit('submit', buildUserFood({ name: name.value, per100g }), amount.value)
+  // `keys` is passed as what was asked: this form offers the seven a label
+  // declares, so a micronutrient it never showed must carry over rather than
+  // be erased (§3, #51).
+  const food = source
+    ? reviseFood(
+        source,
+        { name: name.value, asked: keys, per100g },
+        mode === 'update' ? source.id : crypto.randomUUID(),
+      )
+    : buildUserFood({ name: name.value, per100g })
+
+  emit('submit', food, amount.value)
 
   name.value = ''
   grams.value = ''
@@ -85,7 +135,7 @@ function submit() {
 
 <template>
   <div class="card">
-    <form novalidate @submit.prevent="submit">
+    <form novalidate @submit.prevent="submit('new')">
       <!-- Saying this explicitly matters: a blank field becoming a zero is the
            mistake §3 exists to prevent, and the user is the one supplying the
            gap here. -->
@@ -139,8 +189,21 @@ function submit() {
         <p v-else-if="negative.length > 0" class="problem" role="status">
           Cannot be negative: {{ negative.join(', ') }}
         </p>
+        <p v-else-if="nameIsUnchanged" class="problem" role="status">
+          Give the copy its own name, or update {{ source!.name }} instead.
+        </p>
 
-        <button type="submit" :disabled="!canSubmit">Save and log</button>
+        <!-- Two outcomes from one screen, named at the moment the user knows
+             which they meant. Correcting is safe: log entries snapshot their
+             totals (§9), so it changes what future logs resolve to and rewrites
+             no history. -->
+        <template v-if="source">
+          <button type="button" class="ghost" :disabled="!canSubmit" @click="submit('update')">
+            Update {{ source.name }}
+          </button>
+          <button type="submit" :disabled="!canSubmit || nameIsUnchanged">Save as new and log</button>
+        </template>
+        <button v-else type="submit" :disabled="!canSubmit">Save and log</button>
       </div>
     </form>
   </div>
@@ -213,7 +276,10 @@ input[type='text'] {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-4);
+  /* Wraps because the clone footer carries two buttons and a message, which do
+     not fit on one line at 375px. */
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--line);
 }
@@ -248,5 +314,19 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Secondary, because correcting the source is the rarer intent and §15 reserves
+   the filled pill for the primary action on a surface. */
+.ghost {
+  color: var(--ink-soft);
+  background: none;
+  border: 1px solid var(--line);
+}
+
+.ghost:hover:not(:disabled) {
+  color: var(--ink);
+  background: none;
+  border-color: var(--ink-soft);
 }
 </style>

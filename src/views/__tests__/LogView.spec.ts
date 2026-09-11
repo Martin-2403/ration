@@ -47,11 +47,14 @@ describe('LogView', () => {
     expect(wrapper.find('#log-date').attributes('max')).toBe(toISODate())
   })
 
-  it('offers a choice per meal template, a saved food, and hand entry', async () => {
+  it('offers every way of adding to a day', async () => {
     const wrapper = await render()
 
+    // One home for all of them (#53, #62), so a new route in is an entry here
+    // rather than another block on the summary screen.
     expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
     expect(optionNamed(wrapper, 'A food you have already')).toBeDefined()
+    expect(optionNamed(wrapper, 'A variation of a food')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeDefined()
   })
 
@@ -132,6 +135,40 @@ describe('LogView', () => {
     const [entry] = await db.logEntries.toArray()
     expect(entry!.timestamp).toBe(localMiddayFromISODate(yesterday()))
     expect(entry!.items[0]).toMatchObject({ grams: 150 })
+  })
+
+  it('clones a food and logs the copy against the chosen day', async () => {
+    const wrapper = await render()
+    await wrapper.find('#log-date').setValue(yesterday())
+    await optionNamed(wrapper, 'A variation of a food').trigger('click')
+    await flushPromises()
+
+    // Pick a source, which prefills the form rather than logging anything.
+    const banana = wrapper
+      .findAll('.results button')
+      .find((button) => button.text().includes('Banana'))!
+    await banana.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('Banana')
+    expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('90')
+
+    await wrapper.find('#food-name').setValue('Banana, dried')
+    await wrapper.find('#food-energy').setValue('340')
+    await wrapper.find('#food-grams').setValue('30')
+    await wrapper.find('form').trigger('submit')
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+    const [entry] = await db.logEntries.toArray()
+    expect(entry!.name).toBe('Banana, dried')
+    expect(entry!.timestamp).toBe(localMiddayFromISODate(yesterday()))
+
+    // A new food, and the seed it came from is untouched — seeds are never
+    // stored at all (§13), so the clone is the only thing in the table.
+    const stored = await db.foods.toArray()
+    expect(stored).toHaveLength(1)
+    expect(stored[0]!.id).not.toBe('banana')
+    expect(stored[0]!.name).toBe('Banana, dried')
   })
 
   it('says when the date is not today', async () => {

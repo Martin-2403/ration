@@ -33,7 +33,12 @@ const date = ref(toISODate())
 const today = toISODate()
 
 const choice = ref<
-  { kind: 'template'; template: MealTemplate } | { kind: 'food' } | { kind: 'stored' } | undefined
+  | { kind: 'template'; template: MealTemplate }
+  | { kind: 'food' }
+  | { kind: 'stored' }
+  /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
+  | { kind: 'variation'; source?: Food }
+  | undefined
 >()
 const logged = ref<{ name: string; date: string } | undefined>()
 
@@ -106,6 +111,12 @@ async function logFood(food: Food, grams: number) {
           </button>
         </li>
         <li>
+          <button type="button" @click="choice = { kind: 'variation' }">
+            A variation of a food
+            <span class="detail">Copy one and change what differs</span>
+          </button>
+        </li>
+        <li>
           <button type="button" @click="choice = { kind: 'food' }">
             A food by hand
             <span class="detail">Type in the values yourself</span>
@@ -124,6 +135,15 @@ async function logFood(food: Food, grams: number) {
         />
 
         <FoodPicker v-else-if="choice.kind === 'stored'" @submit="logFood" />
+
+        <template v-else-if="choice.kind === 'variation'">
+          <FoodPicker
+            v-if="!choice.source"
+            purpose="choose"
+            @select="choice = { kind: 'variation', source: $event }"
+          />
+          <FoodForm v-else :source="choice.source" @submit="logFood" />
+        </template>
 
         <FoodForm v-else @submit="logFood" />
       </template>

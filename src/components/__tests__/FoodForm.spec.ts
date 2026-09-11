@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import { DECLARATION_NUTRIENTS } from '../../data/nutrients'
+import type { Food } from '../../types'
 import FoodForm from '../FoodForm.vue'
 
 const fill = async (
@@ -214,5 +215,91 @@ describe('FoodForm', () => {
     // off a label that does not print them (#80).
     expect(wrapper.find('#food-vitaminD').exists()).toBe(false)
     expect(wrapper.find('#food-selenium').exists()).toBe(false)
+  })
+})
+
+/**
+ * #51's clone and correct. The provenance rule itself is tested against
+ * reviseFood; what matters here is that the form asks for the right thing and
+ * hands back the right id.
+ */
+describe('FoodForm, started from a food', () => {
+  const source: Food = {
+    id: 'yoghurt',
+    name: 'Yoghurt, 3.5%',
+    per100g: {
+      energy: { value: 66, source: 'off-packaging' },
+      fat: { value: 3.5, source: 'off-packaging' },
+      salt: { value: 0, source: 'unknown' },
+    },
+  }
+
+  const render = () => mount(FoodForm, { props: { source } })
+
+  it('prefills the name and the known values', () => {
+    const wrapper = render()
+
+    expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('Yoghurt, 3.5%')
+    expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('66')
+    expect((wrapper.find('#food-fat').element as HTMLInputElement).value).toBe('3.5')
+  })
+
+  it('leaves an unknown value blank rather than showing its stored zero', () => {
+    // §3: an unknown is stored as 0, and putting that in front of the user
+    // presents a figure nobody knows as a measurement.
+    expect((render().find('#food-salt').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('refuses a copy under the source name, and says which way out', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-grams').setValue('150')
+
+    // Two foods with the same name is the duplicate #40 removed, arriving by
+    // another route.
+    expect(wrapper.text()).toContain('Give the copy its own name')
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
+  it('saves a renamed copy under a new id, leaving the source alone', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-name').setValue('Yoghurt, 0.1%')
+    await wrapper.find('#food-fat').setValue('0.1')
+    await wrapper.find('#food-grams').setValue('150')
+    await wrapper.find('form').trigger('submit')
+
+    const [food] = wrapper.emitted('submit')![0] as [Food, number]
+    expect(food.id).not.toBe('yoghurt')
+    expect(food.name).toBe('Yoghurt, 0.1%')
+    // The edited figure is the user's; the untouched one keeps the label's.
+    expect(food.per100g.fat).toEqual({ value: 0.1, source: 'user' })
+    expect(food.per100g.energy).toEqual({ value: 66, source: 'off-packaging' })
+  })
+
+  it('corrects in place under the same id', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await wrapper.find('#food-grams').setValue('150')
+    await wrapper.find('button.ghost').trigger('click')
+
+    const [food] = wrapper.emitted('submit')![0] as [Food, number]
+    expect(food.id).toBe('yoghurt')
+    expect(food.per100g.energy).toEqual({ value: 70, source: 'user' })
+  })
+
+  it('allows a correction to keep the name', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await wrapper.find('#food-grams').setValue('150')
+
+    // The same-name guard applies to copying, not to correcting.
+    expect(wrapper.find('button.ghost').attributes('disabled')).toBeUndefined()
+  })
+
+  it('offers no second action when nothing is being copied', () => {
+    const wrapper = mount(FoodForm)
+
+    expect(wrapper.find('button.ghost').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Save and log')
   })
 })

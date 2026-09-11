@@ -137,6 +137,19 @@ describe('FoodPicker', () => {
     expect(wrapper.find('#picker-query').exists()).toBe(true)
   })
 
+  it('hands the food back without asking for an amount when choosing', async () => {
+    const wrapper = mount(FoodPicker, { props: { purpose: 'choose' } })
+    await flushPromises()
+
+    await resultFor(wrapper, 'Banana').trigger('click')
+
+    // #51 uses the picker to choose a source to copy. Collecting grams here
+    // would gather something nobody uses.
+    expect((wrapper.emitted('select')![0] as [Food])[0].id).toBe('banana')
+    expect(wrapper.find('#picker-grams').exists()).toBe(false)
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
   it('says what to do when nothing matches', async () => {
     const wrapper = await render()
     await type(wrapper, 'zzzz')
