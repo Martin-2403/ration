@@ -113,4 +113,83 @@ describe('EntryEditor', () => {
     expect(wrapper.text()).toContain('apple')
     expect(wrapper.find('input').exists()).toBe(true)
   })
+
+  /**
+   * #41. Revising an entry re-resolves each item against current food data, so
+   * correcting an amount also pulls in any change to the food's values since it
+   * was logged. §9 permits that — an edit is the user asking for a rewrite —
+   * but they asked about grams, and nothing said the rest had moved.
+   */
+  describe('when the food has changed since it was logged', () => {
+    it('says nothing while the stored figures still match', async () => {
+      const wrapper = await render()
+
+      expect(wrapper.find('.warning').exists()).toBe(false)
+    })
+
+    it('names the nutrients that would move, before anything is edited', async () => {
+      // The entry snapshotted 52 kcal; the food now says 60.
+      await foods.put({
+        id: 'apple',
+        name: 'Apple',
+        per100g: { energy: { value: 60, source: 'user' } },
+      })
+      const wrapper = await render()
+
+      // Present on open, not only after a keystroke: the user has to know
+      // before they decide to save, not after.
+      expect(wrapper.find('.warning').text()).toContain('values have changed')
+      expect(wrapper.find('.warning').text()).toContain('Energy')
+    })
+
+    it('names every nutrient that moved, not just the first', async () => {
+      await foods.put({
+        id: 'apple',
+        name: 'Apple',
+        per100g: {
+          energy: { value: 60, source: 'user' },
+          protein: { value: 0.5, source: 'user' },
+        },
+      })
+      const wrapper = await render()
+
+      // Protein was absent from the snapshot entirely, which is still a change:
+      // saving would add a figure the entry never carried.
+      expect(wrapper.find('.warning').text()).toContain('Energy')
+      expect(wrapper.find('.warning').text()).toContain('Protein')
+    })
+
+    it('does not warn about a change the amount itself causes', async () => {
+      const wrapper = await render()
+      await wrapper.find('input').setValue('200')
+
+      // The comparison is against the entry's own stored amounts, so editing
+      // grams — the ordinary case — must not trigger it.
+      expect(wrapper.find('.warning').exists()).toBe(false)
+    })
+
+    it('still allows the save', async () => {
+      await foods.put({
+        id: 'apple',
+        name: 'Apple',
+        per100g: { energy: { value: 60, source: 'user' } },
+      })
+      const wrapper = await render()
+
+      // Surfaced, not prevented: §9 allows the rewrite the user asked for.
+      expect(
+        wrapper.findAll('button').find((b) => b.text() === 'Save')!.attributes('disabled'),
+      ).toBeUndefined()
+    })
+
+    it('warns differently when the food is gone entirely', async () => {
+      await db.foods.clear()
+      const wrapper = await render()
+
+      // Worse than a changed value: a revision re-resolves every item, so
+      // saving replaces what this contributed with nothing at all.
+      expect(wrapper.find('.warning').text()).toContain('no longer exists')
+      expect(wrapper.find('.warning').text()).toContain('no data')
+    })
+  })
 })
