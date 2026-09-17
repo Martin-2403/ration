@@ -804,6 +804,7 @@ src/
   totals.ts             // scaling + summing, no Vue imports (§7)
   dates.ts              // local-midnight day boundaries (§9)
   food-lookup.ts        // seeds, then store (§13)
+  template-lookup.ts    // the same two paths for meal templates (§13)
   user-food.ts          // hand-entered food -> Food tagged 'user' (§7)
   nutrient-display.ts   // what the UI may claim about a total (§9, §15)
   resolver.ts           // barcode -> NutrientMap tier walk (§4)
@@ -820,8 +821,9 @@ src/
     DayView.vue  LogView.vue  EvaluationView.vue  SupplementsView.vue  SettingsView.vue
   components/
     AppNav.vue  DaySummary.vue  MealBuilder.vue  MealSlot.vue  DayLog.vue
-    NutrientReport.vue  NutrientBar.vue  FoodForm.vue  FoodPicker.vue
-    EntryEditor.vue  GoalForm.vue  SupplementForm.vue  BackupPanel.vue
+    MealTemplateForm.vue  NutrientReport.vue  NutrientBar.vue  FoodForm.vue
+    FoodPicker.vue  EntryEditor.vue  GoalForm.vue  SupplementForm.vue
+    BackupPanel.vue
   App.vue
 ```
 

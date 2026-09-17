@@ -6,7 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addLocalDays, localMiddayFromISODate, startOfLocalDay, toISODate } from '../../dates'
-import { db } from '../../db'
+import { db, mealTemplates } from '../../db'
 import router from '../../router'
 import LogView from '../LogView.vue'
 
@@ -15,6 +15,12 @@ const render = async () => {
   await router.isReady()
   const wrapper = mount(LogView, { global: { plugins: [router] } })
   await flushPromises()
+
+  // The template list is read from Dexie now (#96) rather than imported, so the
+  // options are not all present on the first tick. One flush was enough in
+  // isolation and not under the full suite, which is the worst way for this to
+  // be wrong — wait for the seed template instead of counting ticks.
+  await vi.waitFor(() => expect(wrapper.text()).toContain('Porridge'))
 
   return wrapper
 }
@@ -28,7 +34,7 @@ const buttonNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string)
 const yesterday = () => toISODate(addLocalDays(startOfLocalDay(), -1))
 
 beforeEach(async () => {
-  await Promise.all([db.logEntries.clear(), db.foods.clear()])
+  await Promise.all([db.logEntries.clear(), db.foods.clear(), db.mealTemplates.clear()])
   setActivePinia(createPinia())
 })
 
@@ -169,6 +175,56 @@ describe('LogView', () => {
     expect(stored).toHaveLength(1)
     expect(stored[0]!.id).not.toBe('banana')
     expect(stored[0]!.name).toBe('Banana, dried')
+  })
+
+  it('lists a stored meal template alongside the seeds', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+
+    // The view read SEED_TEMPLATES directly, so a template the user built was
+    // unreachable — the same gap #40 closed for foods (#96).
+    expect(optionNamed(wrapper, 'Cheese sandwich')).toBeDefined()
+    expect(optionNamed(wrapper, 'Cheese sandwich').text()).toContain('Your meal')
+    expect(optionNamed(wrapper, 'Porridge').text()).toContain('Meal template')
+  })
+
+  it('goes from building a meal straight into logging it', async () => {
+    const wrapper = await render()
+    await optionNamed(wrapper, 'Build a meal').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#template-name').setValue('Second breakfast')
+    await wrapper.find('#slot-0-label').setValue('Base')
+    await wrapper.findAll('button').find((b) => b.text() === 'Add a food')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('.results button')
+      .find((b) => b.text().includes('Banana'))!
+      .trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === 'Save the meal')!.trigger('click')
+    await flushPromises()
+    // Twice: the save awaits the write, and the handler then awaits a re-read
+    // of the list before switching the view.
+    await flushPromises()
+
+    // Someone describing a meal is describing it because they are eating it;
+    // sending them back to the list would make them find it again.
+    expect(await db.mealTemplates.count()).toBe(1)
+    expect(wrapper.text()).toContain('Log meal')
   })
 
   it('says when the date is not today', async () => {
