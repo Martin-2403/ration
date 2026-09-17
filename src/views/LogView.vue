@@ -10,17 +10,31 @@
  * summary screen happened to be showing, which meant viewing the 27th and
  * logging wrote the entry against today without saying so (#61).
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import FoodForm from '../components/FoodForm.vue'
 import FoodPicker from '../components/FoodPicker.vue'
 import MealBuilder from '../components/MealBuilder.vue'
-import { SEED_TEMPLATES } from '../data/foods'
+import MealTemplateForm from '../components/MealTemplateForm.vue'
 import { localMiddayFromISODate, toISODate } from '../dates'
 import { useLogStore } from '../stores/log'
+import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
 import type { Food, MealTemplate } from '../types'
 
 const store = useLogStore()
+
+/**
+ * Seeds and stored templates together (§13, #96). Read rather than imported:
+ * this used SEED_TEMPLATES directly, so a template the user built was as
+ * unreachable as a saved food was before #40.
+ */
+const templates = ref<MealTemplateMatch[]>([])
+
+async function loadTemplates() {
+  templates.value = await listMealTemplates()
+}
+
+onMounted(loadTemplates)
 
 /**
  * Defaults to today on every visit rather than remembering the last pick. A
@@ -38,6 +52,8 @@ const choice = ref<
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
   | { kind: 'variation'; source?: Food }
+  /** Building a meal template rather than logging one (#96). */
+  | { kind: 'new-template' }
   | undefined
 >()
 const logged = ref<{ name: string; date: string } | undefined>()
@@ -60,6 +76,16 @@ const backdatedTo = computed(() =>
 function finish(name: string) {
   logged.value = { name, date: date.value }
   choice.value = undefined
+}
+
+/**
+ * A saved template goes straight into the builder rather than back to the list:
+ * someone who just described a meal is describing it because they are eating
+ * it, and the list would make them find it again.
+ */
+async function savedTemplate(template: MealTemplate) {
+  await loadTemplates()
+  choice.value = { kind: 'template', template }
 }
 
 async function logFood(food: Food, grams: number) {
@@ -96,10 +122,13 @@ async function logFood(food: Food, grams: number) {
            clone (#51) and a barcode scan (#15) each become an entry here
            rather than another block on the summary screen. -->
       <ul v-if="!choice" class="options">
-        <li v-for="template in SEED_TEMPLATES" :key="template.id">
-          <button type="button" @click="choice = { kind: 'template', template }">
-            {{ template.name }}
-            <span class="detail">Meal template</span>
+        <li v-for="match in templates" :key="match.template.id">
+          <button type="button" @click="choice = { kind: 'template', template: match.template }">
+            {{ match.template.name }}
+            <span class="detail">
+              {{ match.origin === 'seed' ? 'Meal template' : 'Your meal' }} ·
+              {{ match.template.slots.length }} slot(s)
+            </span>
           </button>
         </li>
         <li>
@@ -120,6 +149,14 @@ async function logFood(food: Food, grams: number) {
           <button type="button" @click="choice = { kind: 'food' }">
             A food by hand
             <span class="detail">Type in the values yourself</span>
+          </button>
+        </li>
+        <li>
+          <!-- Not logging, but this is the surface where meals are used, so it
+               is where noticing one is missing happens (#96). -->
+          <button type="button" @click="choice = { kind: 'new-template' }">
+            Build a meal
+            <span class="detail">Save a set of slots to log again later</span>
           </button>
         </li>
       </ul>
@@ -144,6 +181,12 @@ async function logFood(food: Food, grams: number) {
           />
           <FoodForm v-else :source="choice.source" @submit="logFood" />
         </template>
+
+        <MealTemplateForm
+          v-else-if="choice.kind === 'new-template'"
+          @saved="savedTemplate"
+          @cancel="choice = undefined"
+        />
 
         <FoodForm v-else @submit="logFood" />
       </template>
