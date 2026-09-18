@@ -52,6 +52,8 @@ const choice = ref<
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
   | { kind: 'variation'; source?: Food }
+  /** The list of saved meals, one step in from the options (#98). */
+  | { kind: 'meals' }
   /** Building a meal template rather than logging one (#96). */
   | { kind: 'new-template' }
   | undefined
@@ -88,6 +90,42 @@ async function savedTemplate(template: MealTemplate) {
   choice.value = { kind: 'template', template }
 }
 
+/**
+ * One step out rather than all the way out.
+ *
+ * With the meals behind an entry of their own (#98) a single coarse back button
+ * throws away two steps at once, and the variation flow had no way back to the
+ * picker at all once a source was chosen — pick the wrong food and the only
+ * route was out to the options, losing everything typed (#95).
+ */
+function goBack() {
+  const current = choice.value
+
+  if (current?.kind === 'template') choice.value = { kind: 'meals' }
+  else if (current?.kind === 'variation' && current.source) choice.value = { kind: 'variation' }
+  else choice.value = undefined
+}
+
+/**
+ * A count and the first couple of names. Naming them all would reintroduce the
+ * unbounded growth this entry exists to contain, one line further down.
+ */
+const mealsSummary = computed(() => {
+  const names = templates.value.map((match) => match.template.name)
+  const shown = names.slice(0, 2).join(', ')
+
+  return `${names.length} saved${shown ? ` · ${shown}` : ''}${names.length > 2 ? '…' : ''}`
+})
+
+const backLabel = computed(() => {
+  const current = choice.value
+
+  if (current?.kind === 'template') return '← Other meals'
+  if (current?.kind === 'variation' && current.source) return '← Other foods'
+
+  return '← Everything else'
+})
+
 async function logFood(food: Food, grams: number) {
   if (!validDate.value) return
 
@@ -122,13 +160,14 @@ async function logFood(food: Food, grams: number) {
            clone (#51) and a barcode scan (#15) each become an entry here
            rather than another block on the summary screen. -->
       <ul v-if="!choice" class="options">
-        <li v-for="match in templates" :key="match.template.id">
-          <button type="button" @click="choice = { kind: 'template', template: match.template }">
-            {{ match.template.name }}
-            <span class="detail">
-              {{ match.origin === 'seed' ? 'Meal template' : 'Your meal' }} ·
-              {{ match.template.slots.length }} slot(s)
-            </span>
+        <li>
+          <!-- One entry rather than one per template: a meal is a thing and the
+               rest of this list is verbs, and the templates grow without limit
+               while the actions do not — at a dozen saved meals they pushed
+               every action off the screen (#98). -->
+          <button type="button" @click="choice = { kind: 'meals' }">
+            A meal
+            <span class="detail">{{ mealsSummary }}</span>
           </button>
         </li>
         <li>
@@ -151,21 +190,33 @@ async function logFood(food: Food, grams: number) {
             <span class="detail">Type in the values yourself</span>
           </button>
         </li>
-        <li>
-          <!-- Not logging, but this is the surface where meals are used, so it
-               is where noticing one is missing happens (#96). -->
-          <button type="button" @click="choice = { kind: 'new-template' }">
-            Build a meal
-            <span class="detail">Save a set of slots to log again later</span>
-          </button>
-        </li>
       </ul>
 
       <template v-else>
-        <button type="button" class="back" @click="choice = undefined">← Everything else</button>
+        <button type="button" class="back" @click="goBack">{{ backLabel }}</button>
+
+        <ul v-if="choice.kind === 'meals'" class="options">
+          <li v-for="match in templates" :key="match.template.id">
+            <button type="button" @click="choice = { kind: 'template', template: match.template }">
+              {{ match.template.name }}
+              <span class="detail">
+                {{ match.origin === 'seed' ? 'Comes with the app' : 'Yours' }} ·
+                {{ match.template.slots.length }} slot(s)
+              </span>
+            </button>
+          </li>
+          <li>
+            <!-- Beside the meals it makes rather than at the end of the options:
+                 noticing a meal is missing happens while looking for it (#96). -->
+            <button type="button" @click="choice = { kind: 'new-template' }">
+              Build a meal
+              <span class="detail">Save a set of slots to log again later</span>
+            </button>
+          </li>
+        </ul>
 
         <MealBuilder
-          v-if="choice.kind === 'template'"
+          v-else-if="choice.kind === 'template'"
           :template="choice.template"
           :eaten-at="backdatedTo"
           @logged="finish(choice.kind === 'template' ? choice.template.name : '')"

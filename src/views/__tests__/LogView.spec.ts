@@ -16,13 +16,22 @@ const render = async () => {
   const wrapper = mount(LogView, { global: { plugins: [router] } })
   await flushPromises()
 
-  // The template list is read from Dexie now (#96) rather than imported, so the
-  // options are not all present on the first tick. One flush was enough in
-  // isolation and not under the full suite, which is the worst way for this to
-  // be wrong — wait for the seed template instead of counting ticks.
-  await vi.waitFor(() => expect(wrapper.text()).toContain('Porridge'))
+  // The template list is read from Dexie (#96) rather than imported, so the
+  // count on the meals entry is not there on the first tick. One flush was
+  // enough in isolation and not under the full suite, which is the worst way
+  // for this to be wrong — wait for a resolved count rather than count ticks.
+  await vi.waitFor(() => expect(wrapper.text()).toMatch(/[1-9]\d* saved/))
 
   return wrapper
+}
+
+/**
+ * Meals sit one step in from the options (#98), so anything that logs a
+ * template goes through here first.
+ */
+const openMeals = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+  await optionNamed(wrapper, 'A meal').trigger('click')
+  await flushPromises()
 }
 
 const optionNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string) =>
@@ -58,7 +67,14 @@ describe('LogView', () => {
 
     // One home for all of them (#53, #62), so a new route in is an entry here
     // rather than another block on the summary screen.
-    expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
+    // One entry for meals rather than one per template: they are things among
+    // verbs, and only they grow (#98).
+    expect(optionNamed(wrapper, 'A meal')).toBeDefined()
+    // The entry names a couple of meals in its summary, so asserting the
+    // absence of "Porridge" would only be catching that text. The count is the
+    // claim: four entries, however many templates exist.
+    expect(wrapper.findAll('.options button')).toHaveLength(4)
+    expect(optionNamed(wrapper, 'A meal').text()).toContain('1 saved · Porridge')
     expect(optionNamed(wrapper, 'A food you have already')).toBeDefined()
     expect(optionNamed(wrapper, 'A variation of a food')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeDefined()
@@ -98,6 +114,7 @@ describe('LogView', () => {
 
   it('logs a meal against today at the time of the write', async () => {
     const wrapper = await render()
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Porridge').trigger('click')
     await flushPromises()
 
@@ -114,6 +131,7 @@ describe('LogView', () => {
   it('logs a meal against a chosen earlier day', async () => {
     const wrapper = await render()
     await wrapper.find('#log-date').setValue(yesterday())
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Porridge').trigger('click')
     await flushPromises()
 
@@ -196,13 +214,16 @@ describe('LogView', () => {
 
     // The view read SEED_TEMPLATES directly, so a template the user built was
     // unreachable — the same gap #40 closed for foods (#96).
+    await openMeals(wrapper)
+
     expect(optionNamed(wrapper, 'Cheese sandwich')).toBeDefined()
-    expect(optionNamed(wrapper, 'Cheese sandwich').text()).toContain('Your meal')
-    expect(optionNamed(wrapper, 'Porridge').text()).toContain('Meal template')
+    expect(optionNamed(wrapper, 'Cheese sandwich').text()).toContain('Yours')
+    expect(optionNamed(wrapper, 'Porridge').text()).toContain('Comes with the app')
   })
 
   it('goes from building a meal straight into logging it', async () => {
     const wrapper = await render()
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Build a meal').trigger('click')
     await flushPromises()
 
@@ -252,6 +273,7 @@ describe('LogView', () => {
   it('confirms what was logged and against which day', async () => {
     const wrapper = await render()
     await wrapper.find('#log-date').setValue(yesterday())
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Porridge').trigger('click')
     await flushPromises()
 
@@ -265,6 +287,7 @@ describe('LogView', () => {
   it('returns to the list with the date intact, so a second meal is one tap away', async () => {
     const wrapper = await render()
     await wrapper.find('#log-date').setValue(yesterday())
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Porridge').trigger('click')
     await flushPromises()
     await buttonNamed(wrapper, 'Log meal').trigger('click')
@@ -274,13 +297,46 @@ describe('LogView', () => {
     expect((wrapper.find('#log-date').element as HTMLInputElement).value).toBe(yesterday())
   })
 
-  it('returns to the list without logging', async () => {
+  it('steps back to the meals rather than out of them', async () => {
     const wrapper = await render()
+    await openMeals(wrapper)
     await optionNamed(wrapper, 'Porridge').trigger('click')
+
+    // One step out, not two. With the meals behind an entry of their own, a
+    // single coarse back button discarded both (#98).
+    await buttonNamed(wrapper, '← Other meals').trigger('click')
+
+    expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
+    expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
+    expect(await db.logEntries.count()).toBe(0)
+  })
+
+  it('steps back from a variation to the picker, not out of the flow', async () => {
+    const wrapper = await render()
+    await optionNamed(wrapper, 'A variation of a food').trigger('click')
+    await flushPromises()
+
+    await wrapper
+      .findAll('.results button')
+      .find((button) => button.text().includes('Banana'))!
+      .trigger('click')
+    await flushPromises()
+
+    // Picking the wrong source used to mean going out to the options and
+    // losing everything typed — there was no step back at all (#95).
+    await buttonNamed(wrapper, '← Other foods').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('#picker-query').exists()).toBe(true)
+  })
+
+  it('leaves the options entirely from the top of a flow', async () => {
+    const wrapper = await render()
+    await optionNamed(wrapper, 'A food by hand').trigger('click')
 
     await buttonNamed(wrapper, '← Everything else').trigger('click')
 
-    expect(wrapper.find('.options').exists()).toBe(true)
+    expect(optionNamed(wrapper, 'A meal')).toBeDefined()
     expect(await db.logEntries.count()).toBe(0)
   })
 })
