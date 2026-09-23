@@ -127,6 +127,55 @@ async function logMeal() {
   border-top: 1px solid var(--line);
 }
 
+/* Grid items are min-width: auto by default, so the food name set the column's
+   floor and the row could not shrink below the sum of its four tracks (#102). */
+select,
+.fixed {
+  min-width: 0;
+}
+
+.fixed {
+  overflow-wrap: anywhere;
+}
+
+/* The four tracks need about 452px between them once the gaps are counted, and
+   the card and page padding add 80 — so the row is only honest above ~34rem.
+   Below that it folds into two: the slot's energy beside its label, then the
+   food and the amount it applies to on the row under them. Food before amount
+   keeps the two controls side by side in the order they are focused — the
+   other way round reads as well but sends the tab stop from the second row
+   back up to the first. The breakpoint is higher than the 30rem the nav uses
+   because it is measured against this row, not guessed; at 500px the liquid
+   select rendered "Oat drink, fo…". This is a PWA first (§2), so the phone
+   layout is the one that has to read (#102). */
+@media (max-width: 34rem) {
+  .slot {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'label kcal'
+      'food grams';
+    row-gap: var(--space-2);
+  }
+
+  label {
+    grid-area: label;
+  }
+
+  select,
+  .fixed {
+    grid-area: food;
+  }
+
+  .grams {
+    grid-area: grams;
+    justify-self: end;
+  }
+
+  .kcal {
+    grid-area: kcal;
+  }
+}
+
 label {
   color: var(--ink-soft);
   font-size: var(--text-caption);

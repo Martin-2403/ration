@@ -387,6 +387,13 @@ async function logFood(food: Food, grams: number) {
   padding: var(--space-5) var(--space-4) var(--space-7);
 }
 
+/* A grid item is min-width: auto, so a child too wide for the column widens
+   the column rather than shrinking — which is how the meal builder took the
+   whole log screen sideways at 375px, date picker and all (#102). */
+.page > * {
+  min-width: 0;
+}
+
 h1 {
   margin: 0;
   font-size: var(--text-section);
