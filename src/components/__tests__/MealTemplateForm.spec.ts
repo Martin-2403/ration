@@ -37,6 +37,23 @@ beforeEach(async () => {
 })
 
 describe('MealTemplateForm', () => {
+  it('stores one meal however quickly the button is pressed twice', async () => {
+    const wrapper = await render()
+    await wrapper.find('#template-name').setValue('Second breakfast')
+    await wrapper.find('#slot-0-label').setValue('Base')
+    await addFood(wrapper, 0, 'Banana')
+
+    // Both clicks land before the first write resolves; without the guard each
+    // minted its own id, so the list grew a second identical meal.
+    const save = buttonNamed(wrapper, 'Save the meal')
+    save.trigger('click')
+    save.trigger('click')
+    await flushPromises()
+
+    expect(await db.mealTemplates.count()).toBe(1)
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+  })
+
   it('refuses to save without a name', async () => {
     const wrapper = await render()
 

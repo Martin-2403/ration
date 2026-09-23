@@ -73,7 +73,12 @@ const choice = ref<
   | { kind: 'new-template' }
   | undefined
 >()
-const logged = ref<{ name: string; date: string } | undefined>()
+/**
+ * What the last flow produced. `logged: false` is a real outcome, not an empty
+ * state: a day whose every meal was skipped wrote nothing, and saying "Logged"
+ * over it would claim intake that was never recorded (§3).
+ */
+const outcome = ref<{ logged: boolean; what: string; date: string } | undefined>()
 
 const validDate = computed(() => localMiddayFromISODate(date.value) !== undefined)
 
@@ -90,8 +95,8 @@ const backdatedTo = computed(() =>
   date.value === today ? undefined : localMiddayFromISODate(date.value),
 )
 
-function finish(name: string) {
-  logged.value = { name, date: date.value }
+function finish(what: string, logged = true) {
+  outcome.value = { logged, what, date: date.value }
   choice.value = undefined
 }
 
@@ -117,7 +122,8 @@ function finishDay(count: number) {
   const current = choice.value
   const name = current?.kind === 'day' ? current.template.name : 'the day'
 
-  finish(`${count} meal(s) from ${name}`)
+  if (count === 0) finish(name, false)
+  else finish(`${count} meal(s) from ${name}`)
 }
 
 /** Same reasoning for a day: whoever just described one is about to eat it. */
@@ -201,9 +207,12 @@ async function logFood(food: Food, grams: number) {
       <p v-else-if="date !== today" class="note">Logging against {{ date }}, not today.</p>
     </section>
 
-    <p v-if="logged" class="confirmation" role="status">
-      Logged {{ logged.name }} on {{ logged.date }}.
-      <RouterLink to="/">See the day</RouterLink>
+    <p v-if="outcome" class="confirmation" role="status">
+      <template v-if="outcome.logged">
+        Logged {{ outcome.what }} on {{ outcome.date }}.
+        <RouterLink to="/">See the day</RouterLink>
+      </template>
+      <template v-else>Nothing logged from {{ outcome.what }} — every meal was skipped.</template>
     </p>
 
     <template v-if="validDate">
