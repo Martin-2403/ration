@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 
 import { useMeal } from '../composables/useMeal'
 import { formatAmount } from '../nutrient-display'
@@ -18,12 +18,30 @@ const emit = defineEmits<{ logged: [] }>()
 const store = useLogStore()
 const draft = useMeal(template)
 
+/**
+ * True while the write is in flight.
+ *
+ * The button stayed live across the await, so two taps wrote the meal twice —
+ * and a duplicate entry doubles the day's intake, which §9 then reads as
+ * measured. Nothing in the log would say it happened twice by accident: two
+ * portions is a thing people eat (#106).
+ */
+const logging = ref(false)
+
 onMounted(draft.load)
 
 async function logMeal() {
-  await store.logMeal(draft.toEntry(eatenAt))
-  draft.reset()
-  emit('logged')
+  if (logging.value) return
+
+  logging.value = true
+
+  try {
+    await store.logMeal(draft.toEntry(eatenAt))
+    draft.reset()
+    emit('logged')
+  } finally {
+    logging.value = false
+  }
 }
 </script>
 
@@ -85,7 +103,9 @@ async function logMeal() {
             : '—'
         }}
       </span>
-      <button type="button" :disabled="!draft.canLog.value" @click="logMeal">Log meal</button>
+      <button type="button" :disabled="!draft.canLog.value || logging" @click="logMeal">
+        Log meal
+      </button>
     </div>
   </section>
 </template>
