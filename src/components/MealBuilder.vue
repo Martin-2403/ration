@@ -140,8 +140,11 @@ select,
 
 /* The four tracks need about 452px between them once the gaps are counted, and
    the card and page padding add 80 — so the row is only honest above ~34rem.
-   Below that it folds into two: amount beside the label, food and energy under
-   them. The breakpoint is higher than the 30rem the nav and GoalForm use
+   Below that it folds into two: the slot's energy beside its label, then the
+   food and the amount it applies to on the row under them. Food before amount
+   keeps the two controls side by side in the order they are focused — the
+   other way round reads as well but sends the tab stop from the second row
+   back up to the first. The breakpoint is higher than the 30rem the nav uses
    because it is measured against this row, not guessed; at 500px the liquid
    select rendered "Oat drink, fo…". This is a PWA first (§2), so the phone
    layout is the one that has to read (#102). */
@@ -149,8 +152,8 @@ select,
   .slot {
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      'label grams'
-      'food kcal';
+      'label kcal'
+      'food grams';
     row-gap: var(--space-2);
   }
 
