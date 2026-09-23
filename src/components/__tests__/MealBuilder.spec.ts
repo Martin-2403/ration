@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SEED_TEMPLATES } from '../../data/foods'
 import { db } from '../../db'
+import { useLogStore } from '../../stores/log'
 import MealBuilder from '../MealBuilder.vue'
 
 const porridge = SEED_TEMPLATES.find((t) => t.id === 'porridge')!
@@ -37,6 +38,12 @@ describe('MealBuilder', () => {
   })
 
   it('logs once however quickly the button is pressed twice', async () => {
+    // Spied before the mount: the store is a singleton per pinia, so this is
+    // the object the component resolves, and it goes with the pinia beforeEach
+    // replaces.
+    const store = useLogStore()
+    vi.spyOn(store, 'logMeal')
+
     const wrapper = await render()
 
     // Both clicks land before the write resolves. A duplicate entry doubles
@@ -45,11 +52,12 @@ describe('MealBuilder', () => {
     const button = wrapper.findAll('button').find((b) => b.text() === 'Log meal')!
     button.trigger('click')
     button.trigger('click')
-    await flushPromises()
-    await flushPromises()
 
-    expect(await db.logEntries.count()).toBe(1)
-    expect(wrapper.emitted('logged')).toHaveLength(1)
+    // Counting the calls the guard is meant to stop, which is synchronous.
+    // Rows and emits both arrive an unknown number of ticks later, and a test
+    // that guesses how many is how a suite-order flake starts.
+    expect(store.logMeal).toHaveBeenCalledTimes(1)
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
   })
 
   it('logs an amount typed with a decimal comma', async () => {
