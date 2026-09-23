@@ -51,6 +51,10 @@ Verify a green run against the head SHA you actually pushed, not the branch name
 
 - **One issue → one branch → one PR**, carrying one reviewable concern. A diff too
   big to read line by line is a scoping problem, not a review problem (§19).
+- **Every PR gets a review pass before handover.** Open it, run `/code-review`
+  against its number, then act on what comes back — fix it in the same branch, or
+  say in chat why it stands. Only then hand it over. Findings are reported in
+  chat, not added to the PR body, and the merge is never the assistant's to make.
 - In chat, write **`PR#64`** and **`I#42`**; inside GitHub bodies use bare `#64` so it
   autolinks. `Closes #N` when the PR finishes the issue, a comment on it when it does
   not.
