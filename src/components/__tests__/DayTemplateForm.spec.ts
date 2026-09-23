@@ -2,9 +2,9 @@
 import 'fake-indexeddb/auto'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { db, mealTemplates } from '../../db'
+import { db, dayTemplates, mealTemplates } from '../../db'
 import type { DayTemplate, MealTemplate } from '../../types'
 import DayTemplateForm from '../DayTemplateForm.vue'
 
@@ -23,8 +23,8 @@ const meal = (id: string, name: string): MealTemplate => ({
   ],
 })
 
-const render = async (draft?: DayTemplate) => {
-  const wrapper = mount(DayTemplateForm, { props: { draft } })
+const render = async (draft?: DayTemplate, existing?: boolean) => {
+  const wrapper = mount(DayTemplateForm, { props: { draft, existing } })
   await flushPromises()
 
   return wrapper
@@ -179,5 +179,40 @@ describe('DayTemplateForm', () => {
 
     // Quietly shortening the day is the §3 mistake in another place.
     expect(order(wrapper)).toEqual(['gone (no longer saved)'])
+  })
+})
+
+describe('DayTemplateForm, correcting a saved day', () => {
+  const stored = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+
+  it('replaces the day rather than adding a near-copy', async () => {
+    await dayTemplates.put(stored)
+    const wrapper = await render(stored, true)
+    await wrapper.find('#day-name').setValue('Office day')
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
+
+    const days = await db.dayTemplates.toArray()
+    expect(days).toHaveLength(1)
+    expect(days[0]).toMatchObject({ id: 'workday', name: 'Office day' })
+  })
+
+  it('announces a correction as one', async () => {
+    await dayTemplates.put(stored)
+    const wrapper = await render(stored, true)
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
+
+    expect(wrapper.emitted('saved')).toBeUndefined()
+  })
+
+  it('treats a clone as new, id and all', async () => {
+    // A clone carries an id before the form opens, so the id cannot be what
+    // tells the two apart.
+    const wrapper = await render({ ...stored, id: 'copy-id', name: 'Workday (copy)' })
+    await buttonNamed(wrapper, 'Save the day').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('saved')).toHaveLength(1))
+
+    expect(wrapper.emitted('updated')).toBeUndefined()
   })
 })

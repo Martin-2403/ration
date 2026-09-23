@@ -47,6 +47,10 @@ const optionNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string)
 const buttonNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string) =>
   wrapper.findAll('button').find((button) => button.text() === label)!
 
+/** The row actions beside a list entry carry their subject in the label. */
+const labelled = (wrapper: Awaited<ReturnType<typeof render>>, label: string) =>
+  wrapper.findAll('button').find((button) => button.attributes('aria-label') === label)!
+
 const yesterday = () => toISODate(addLocalDays(startOfLocalDay(), -1))
 
 beforeEach(async () => {
@@ -274,6 +278,80 @@ describe('LogView', () => {
     expect(optionNamed(wrapper, 'Cheese sandwich')).toBeDefined()
     expect(optionNamed(wrapper, 'Cheese sandwich').text()).toContain('Yours')
     expect(optionNamed(wrapper, 'Porridge').text()).toContain('Comes with the app')
+  })
+
+  it('offers Edit on a meal the user built, not on one that ships', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+
+    // A seed is corrected by a release, and a stored copy of one is shadowed
+    // by it anyway (§13) — so offering to edit it would be a dead end.
+    expect(labelled(wrapper, 'Edit Cheese sandwich')).toBeDefined()
+    expect(labelled(wrapper, 'Edit Porridge')).toBeUndefined()
+  })
+
+  it('corrects a saved meal in place and lands back on the meals', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Edit Cheese sandwich').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#slot-0-grams').setValue('95')
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Cheese sandwich')).toBeDefined())
+
+    // Correcting an amount is not a step towards eating it, so the builder
+    // would read as though the fix had logged something (#101).
+    expect(wrapper.text()).not.toContain('Log meal')
+    const stored = await db.mealTemplates.toArray()
+    expect(stored).toHaveLength(1)
+    expect(stored[0]!.slots[0]!.defaultGrams).toBe(95)
+    expect(stored[0]!.slots[0]!.id).toBe('bread')
+  })
+
+  it('corrects a saved day in place and lands back on the days', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await labelled(wrapper, 'Edit Workday').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#day-name').setValue('Office day')
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Office day')).toBeDefined())
+
+    expect(wrapper.text()).not.toContain('Meal 1 of 1')
+    const days = await db.dayTemplates.toArray()
+    expect(days).toHaveLength(1)
+    expect(days[0]).toMatchObject({ id: 'workday', name: 'Office day' })
   })
 
   it('goes from building a meal straight into logging it', async () => {

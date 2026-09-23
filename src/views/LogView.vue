@@ -61,16 +61,19 @@ const choice = ref<
   /** The saved days, one step in, and then one of them running (#52). */
   | { kind: 'days' }
   | { kind: 'day'; template: DayTemplate }
-  /** Composing a day, either from nothing or from a copy of an existing one. */
-  | { kind: 'new-day'; draft?: DayTemplate }
+  /**
+   * The day form: nothing to build one, a clone to start from, or a saved day
+   * to correct in place (#101).
+   */
+  | { kind: 'day-form'; draft?: DayTemplate; existing?: boolean }
   | { kind: 'food' }
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
   | { kind: 'variation'; source?: Food }
   /** The list of saved meals, one step in from the options (#98). */
   | { kind: 'meals' }
-  /** Building a meal template rather than logging one (#96). */
-  | { kind: 'new-template' }
+  /** The meal form: building one (#96), or correcting a saved one (#101). */
+  | { kind: 'meal-form'; draft?: MealTemplate }
   | undefined
 >()
 /**
@@ -111,6 +114,16 @@ async function savedTemplate(template: MealTemplate) {
 }
 
 /**
+ * A correction goes back to the list instead. Whoever fixed a wrong amount was
+ * correcting the meal, not about to eat it, and dropping them into the builder
+ * would read as though the fix had logged something (#101).
+ */
+async function updatedTemplate() {
+  await loadTemplates()
+  choice.value = { kind: 'meals' }
+}
+
+/**
  * What a finished day says, given how much of it was actually logged — a day
  * whose lunch was skipped did not log the day.
  *
@@ -132,6 +145,12 @@ async function savedDay(template: DayTemplate) {
   choice.value = { kind: 'day', template }
 }
 
+/** And the same for a correction: back to the days, having logged nothing. */
+async function updatedDay() {
+  await loadDays()
+  choice.value = { kind: 'days' }
+}
+
 /**
  * One step out rather than all the way out.
  *
@@ -143,9 +162,9 @@ async function savedDay(template: DayTemplate) {
 function goBack() {
   const current = choice.value
 
-  if (current?.kind === 'template' || current?.kind === 'new-template') {
+  if (current?.kind === 'template' || current?.kind === 'meal-form') {
     choice.value = { kind: 'meals' }
-  } else if (current?.kind === 'day' || current?.kind === 'new-day') {
+  } else if (current?.kind === 'day' || current?.kind === 'day-form') {
     choice.value = { kind: 'days' }
   } else if (current?.kind === 'variation' && current.source) {
     choice.value = { kind: 'variation' }
@@ -176,8 +195,8 @@ const daysSummary = computed(() =>
 const backLabel = computed(() => {
   const current = choice.value
 
-  if (current?.kind === 'template' || current?.kind === 'new-template') return '← Other meals'
-  if (current?.kind === 'day' || current?.kind === 'new-day') return '← Other days'
+  if (current?.kind === 'template' || current?.kind === 'meal-form') return '← Other meals'
+  if (current?.kind === 'day' || current?.kind === 'day-form') return '← Other days'
   if (current?.kind === 'variation' && current.source) return '← Other foods'
 
   return '← Everything else'
@@ -285,7 +304,7 @@ async function logFood(food: Food, grams: number) {
         <button type="button" class="back" @click="goBack">{{ backLabel }}</button>
 
         <ul v-if="choice.kind === 'meals'" class="options">
-          <li v-for="match in templates" :key="match.template.id">
+          <li v-for="match in templates" :key="match.template.id" class="with-aside">
             <button type="button" @click="choice = { kind: 'template', template: match.template }">
               {{ match.template.name }}
               <span class="detail">
@@ -293,11 +312,22 @@ async function logFood(food: Food, grams: number) {
                 {{ match.template.slots.length }} slot(s)
               </span>
             </button>
+            <!-- Only what the user owns: a seed is corrected by a release, and
+                 a stored copy of one would be shadowed by it anyway (§13). -->
+            <button
+              v-if="match.origin === 'stored'"
+              type="button"
+              class="aside"
+              :aria-label="`Edit ${match.template.name}`"
+              @click="choice = { kind: 'meal-form', draft: match.template }"
+            >
+              Edit
+            </button>
           </li>
           <li>
             <!-- Beside the meals it makes rather than at the end of the options:
                  noticing a meal is missing happens while looking for it (#96). -->
-            <button type="button" @click="choice = { kind: 'new-template' }">
+            <button type="button" @click="choice = { kind: 'meal-form' }">
               Build a meal
               <span class="detail">Save a set of slots to log again later</span>
             </button>
@@ -310,6 +340,14 @@ async function logFood(food: Food, grams: number) {
               {{ template.name }}
               <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
             </button>
+            <button
+              type="button"
+              class="aside"
+              :aria-label="`Edit ${template.name}`"
+              @click="choice = { kind: 'day-form', draft: template, existing: true }"
+            >
+              Edit
+            </button>
             <!-- Beside the day it copies: "like my workday, but" is how the
                  second one gets made (#52). -->
             <button
@@ -318,7 +356,7 @@ async function logFood(food: Food, grams: number) {
               :aria-label="`Copy ${template.name}`"
               @click="
                 choice = {
-                  kind: 'new-day',
+                  kind: 'day-form',
                   draft: cloneDayTemplate(template, `${template.name} (copy)`),
                 }
               "
@@ -327,7 +365,7 @@ async function logFood(food: Food, grams: number) {
             </button>
           </li>
           <li>
-            <button type="button" @click="choice = { kind: 'new-day' }">
+            <button type="button" @click="choice = { kind: 'day-form' }">
               Build a day
               <span class="detail">Put your meals in the order you eat them</span>
             </button>
@@ -342,9 +380,11 @@ async function logFood(food: Food, grams: number) {
         />
 
         <DayTemplateForm
-          v-else-if="choice.kind === 'new-day'"
+          v-else-if="choice.kind === 'day-form'"
           :draft="choice.draft"
+          :existing="choice.existing"
           @saved="savedDay"
+          @updated="updatedDay"
           @cancel="goBack"
         />
 
@@ -367,8 +407,10 @@ async function logFood(food: Food, grams: number) {
         </template>
 
         <MealTemplateForm
-          v-else-if="choice.kind === 'new-template'"
+          v-else-if="choice.kind === 'meal-form'"
+          :draft="choice.draft"
           @saved="savedTemplate"
+          @updated="updatedTemplate"
           @cancel="goBack"
         />
 

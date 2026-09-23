@@ -1,11 +1,16 @@
 <script setup lang="ts">
 /**
- * Building a meal template (§7, #96).
+ * Building or correcting a meal template (§7, #96, #101).
  *
  * §7's slot model is the point: a slot names a part of the meal, holds the
  * foods that can fill it, and carries a default amount. One option makes the
  * slot fixed, several make it a dropdown at log time — which is what lets one
  * template cover porridge with oat drink and porridge with milk.
+ *
+ * Given a `draft` it edits that meal in place, under its own id and keeping
+ * each slot's id. Slot ids are what logged entries reference (§7), so renaming
+ * a slot or correcting its amount must leave the id alone — history is read
+ * through it long after the template has changed.
  *
  * Food choice reuses FoodPicker in `choose` mode (#51), so every food already
  * reachable for logging is reachable here too.
@@ -18,9 +23,22 @@ import { parseAmount } from '../parse-amount'
 import type { Food, MealSlot, MealTemplate } from '../types'
 import FoodPicker from './FoodPicker.vue'
 
-const emit = defineEmits<{ saved: [template: MealTemplate]; cancel: [] }>()
+const { draft } = defineProps<{
+  /** A saved meal to correct, or nothing to build one. */
+  draft?: MealTemplate
+}>()
+
+const emit = defineEmits<{
+  /** A meal that did not exist before. */
+  saved: [template: MealTemplate]
+  /** The same meal, corrected. */
+  updated: [template: MealTemplate]
+  cancel: []
+}>()
 
 interface DraftSlot {
+  /** The saved slot's id, absent for one added here (§7). */
+  id?: string
   label: string
   /** Food ids. One makes the slot fixed, several make it a choice (§7). */
   options: string[]
@@ -31,8 +49,17 @@ interface DraftSlot {
 
 const blankSlot = (): DraftSlot => ({ label: '', options: [], defaultOptionId: '', grams: '100' })
 
-const name = ref('')
-const slots = ref<DraftSlot[]>([blankSlot()])
+const fromTemplate = (template: MealTemplate): DraftSlot[] =>
+  template.slots.map((slot) => ({
+    id: slot.id,
+    label: slot.label,
+    options: [...slot.options],
+    defaultOptionId: slot.defaultOptionId,
+    grams: String(slot.defaultGrams),
+  }))
+
+const name = ref(draft?.name ?? '')
+const slots = ref<DraftSlot[]>(draft ? fromTemplate(draft) : [blankSlot()])
 
 /** Names for the chosen food ids, so a slot shows more than a uuid. */
 const foods = ref(new Map<string, Food>())
@@ -43,19 +70,20 @@ const pickingFor = ref<number | undefined>(undefined)
 /**
  * The id this form will save under, decided once.
  *
- * Minting it inside save() made every call a different meal, so two taps on
- * the button stored two copies of the same thing; a retry after a failed write
- * would have done the same.
+ * A correction keeps the meal's own id, so the save replaces it rather than
+ * adding a near-copy (#101). For a new meal it is minted here rather than in
+ * save(): minting per call made two taps two meals, and a retry after a failed
+ * write would have done the same (#104).
  */
-const id = crypto.randomUUID()
+const id = draft?.id ?? crypto.randomUUID()
 
 /** True while a write is in flight, so a second tap cannot start another. */
 const saving = ref(false)
 
-onMounted(() => {
-  // Nothing to resolve on a blank form; kept so a future prefill path (#52's
-  // clone) has somewhere to load into.
-  foods.value = new Map()
+onMounted(async () => {
+  // A blank form has nothing to resolve; a correction has to name the foods
+  // its slots already hold, or every option would read as a uuid.
+  foods.value = draft ? await findFoods(draft.slots.flatMap((slot) => slot.options)) : new Map()
 })
 
 const foodName = (id: string) => foods.value.get(id)?.name ?? id
@@ -115,10 +143,11 @@ async function save() {
       const amount = amounts.value[index]
 
       return {
-        // A uuid rather than a slug of the label: LogItem references slot ids,
-        // so renaming a slot must not change its id, and a slug invites
-        // exactly that.
-        id: crypto.randomUUID(),
+        // Kept if the slot already had one, so a logged entry still resolves
+        // to the slot it names (§7). A uuid rather than a slug of the label
+        // for the same reason: renaming a slot must not change its id, and a
+        // slug invites exactly that.
+        id: slot.id ?? crypto.randomUUID(),
         label: slot.label.trim(),
         // Derived, never asked for — two sources of the same truth is how they
         // drift (§7).
@@ -134,7 +163,10 @@ async function save() {
 
   try {
     await mealTemplates.put(template)
-    emit('saved', template)
+    // Split rather than a computed event name: the emit overloads are typed
+    // per event, so a union of the two names satisfies neither.
+    if (draft) emit('updated', template)
+    else emit('saved', template)
   } finally {
     saving.value = false
   }
@@ -227,7 +259,9 @@ async function save() {
         </p>
 
         <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
-        <button type="button" :disabled="!canSave" @click="save">Save the meal</button>
+        <button type="button" :disabled="!canSave" @click="save">
+          {{ draft ? 'Save the changes' : 'Save the meal' }}
+        </button>
       </div>
     </template>
   </section>
