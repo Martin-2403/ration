@@ -1,11 +1,12 @@
 <script setup lang="ts">
 /**
- * Composing a day out of meals (§7, #52).
+ * Composing or correcting a day of meals (§7, #52, #101).
  *
  * The editor for a DayTemplate value: it names the day and orders the meals it
- * is made of. It never creates the copy itself — a clone arrives as `draft`
- * already made by cloneDayTemplate, so "start from my workday" and "start from
- * nothing" are the same form with different initial state.
+ * is made of. It never decides which day that is — a saved day arrives as
+ * `draft` to be corrected in place, a clone arrives already made by
+ * cloneDayTemplate, and nothing at all means a day built from scratch. All
+ * three are the same form with different initial state.
  *
  * Meals come from listMealTemplates, so seeds and anything the user built
  * (#96) are equally available.
@@ -17,12 +18,25 @@ import { moveMeal } from '../day-templates'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
 import type { DayTemplate } from '../types'
 
-const { draft } = defineProps<{
-  /** A clone to start from, or nothing for a day built from scratch. */
+const { draft, existing } = defineProps<{
+  /** A saved day to correct, a clone to start from, or nothing at all. */
   draft?: DayTemplate
+  /**
+   * True when `draft` is a day already in the store rather than a clone of
+   * one. A clone carries an id too — cloneDayTemplate gives it one before the
+   * form opens — so the id alone cannot tell them apart, and saving a clone
+   * must not be announced as a correction.
+   */
+  existing?: boolean
 }>()
 
-const emit = defineEmits<{ saved: [template: DayTemplate]; cancel: [] }>()
+const emit = defineEmits<{
+  /** A day that did not exist before, whether built or copied. */
+  saved: [template: DayTemplate]
+  /** The same day, corrected. */
+  updated: [template: DayTemplate]
+  cancel: []
+}>()
 
 const name = ref(draft?.name ?? '')
 /** Meal template ids in the order they are eaten. Repeats are the user's call. */
@@ -34,10 +48,11 @@ const adding = ref('')
 /**
  * The id this form will save under, decided once.
  *
- * Minting it inside save() made every call a different day, so two taps on the
- * button stored two copies of the same thing. Fixed here rather than only with
- * the in-flight guard below: a save that fails and is retried should replace
- * the row it could not write, not add a second one.
+ * A correction keeps the day's own id so the save replaces it (#101), and a
+ * clone keeps the one cloneDayTemplate gave it. Minting inside save() made
+ * every call a different day, so two taps stored two copies; deciding it here
+ * also means a retry after a failed write replaces the row it could not write
+ * rather than adding a second one (#104).
  */
 const id = draft?.id ?? crypto.randomUUID()
 
@@ -82,9 +97,6 @@ async function save() {
   saving.value = true
 
   const template: DayTemplate = {
-    // A clone keeps the id cloneDayTemplate already gave it; a day built from
-    // scratch gets one at setup. Either way it is new — this form never edits a
-    // stored day in place (#101).
     id,
     name: name.value.trim(),
     mealTemplateIds: [...meals.value],
@@ -92,7 +104,10 @@ async function save() {
 
   try {
     await dayTemplates.put(template)
-    emit('saved', template)
+    // Split rather than a computed event name: the emit overloads are typed
+    // per event, so a union of the two names satisfies neither.
+    if (existing) emit('updated', template)
+    else emit('saved', template)
   } finally {
     saving.value = false
   }
@@ -163,7 +178,9 @@ async function save() {
       <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
 
       <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
-      <button type="button" :disabled="!canSave" @click="save">Save the day</button>
+      <button type="button" :disabled="!canSave" @click="save">
+        {{ existing ? 'Save the changes' : 'Save the day' }}
+      </button>
     </div>
   </section>
 </template>

@@ -2,18 +2,41 @@
 import 'fake-indexeddb/auto'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../db'
 import type { MealTemplate } from '../../types'
 import MealTemplateForm from '../MealTemplateForm.vue'
 
-const render = async () => {
-  const wrapper = mount(MealTemplateForm)
+const render = async (draft?: MealTemplate) => {
+  const wrapper = mount(MealTemplateForm, { props: { draft } })
   await flushPromises()
 
   return wrapper
 }
+
+const saved = (id: string): MealTemplate => ({
+  id,
+  name: 'Porridge',
+  slots: [
+    {
+      id: 'base-slot',
+      label: 'Base',
+      kind: 'fixed',
+      options: ['oats'],
+      defaultOptionId: 'oats',
+      defaultGrams: 50,
+    },
+    {
+      id: 'fruit-slot',
+      label: 'Fruit',
+      kind: 'variable',
+      options: ['banana', 'blueberries'],
+      defaultOptionId: 'banana',
+      defaultGrams: 80,
+    },
+  ],
+})
 
 type Wrapper = Awaited<ReturnType<typeof render>>
 
@@ -184,5 +207,69 @@ describe('MealTemplateForm', () => {
 
     expect(wrapper.emitted('cancel')).toHaveLength(1)
     expect(await db.mealTemplates.count()).toBe(0)
+  })
+})
+
+/**
+ * Saves and waits for the emit, which follows the write. Flushing promises is
+ * not enough — how many ticks Dexie needs is not something a test should know.
+ */
+const saveChanges = async (wrapper: Wrapper) => {
+  await buttonNamed(wrapper, 'Save the changes').trigger('click')
+  await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
+}
+
+describe('MealTemplateForm, correcting a saved meal', () => {
+  it('opens on what was saved, foods named rather than listed as ids', async () => {
+    const wrapper = await render(saved('mine'))
+
+    expect((wrapper.find('#template-name').element as HTMLInputElement).value).toBe('Porridge')
+    expect((wrapper.find('#slot-0-label').element as HTMLInputElement).value).toBe('Base')
+    expect((wrapper.find('#slot-1-grams').element as HTMLInputElement).value).toBe('80')
+    expect(wrapper.text()).toContain('Rolled oats')
+    expect(wrapper.text()).toContain('Blueberries')
+  })
+
+  it('replaces the meal rather than adding a near-copy', async () => {
+    const wrapper = await render(saved('mine'))
+    await wrapper.find('#slot-0-grams').setValue('60')
+    await saveChanges(wrapper)
+
+    const stored = await db.mealTemplates.toArray()
+    expect(stored).toHaveLength(1)
+    expect(stored[0]!.id).toBe('mine')
+    expect(stored[0]!.slots[0]!.defaultGrams).toBe(60)
+  })
+
+  it('keeps the slot ids a logged entry references', async () => {
+    const wrapper = await render(saved('mine'))
+    await wrapper.find('#slot-0-label').setValue('Oats')
+    await saveChanges(wrapper)
+
+    // An entry keeps its slotId for as long as it exists, and reads back
+    // through the template it names (§7). Renaming a slot must not orphan it.
+    const [stored] = await db.mealTemplates.toArray()
+    expect(stored!.slots.map((slot) => slot.id)).toEqual(['base-slot', 'fruit-slot'])
+    expect(stored!.slots[0]!.label).toBe('Oats')
+  })
+
+  it('gives a slot added during a correction an id of its own', async () => {
+    const wrapper = await render(saved('mine'))
+    await buttonNamed(wrapper, 'Add a slot').trigger('click')
+    await wrapper.find('#slot-2-label').setValue('Seeds')
+    await addFood(wrapper, 2, 'Banana')
+    await saveChanges(wrapper)
+
+    const [stored] = await db.mealTemplates.toArray()
+    const ids = stored!.slots.map((slot) => slot.id)
+    expect(ids.slice(0, 2)).toEqual(['base-slot', 'fruit-slot'])
+    expect(new Set(ids).size).toBe(3)
+  })
+
+  it('announces a correction as one, so the caller does not offer to log it', async () => {
+    const wrapper = await render(saved('mine'))
+    await saveChanges(wrapper)
+
+    expect(wrapper.emitted('saved')).toBeUndefined()
   })
 })
