@@ -12,14 +12,17 @@
  */
 import { computed, onMounted, ref } from 'vue'
 
+import DayRunner from '../components/DayRunner.vue'
+import DayTemplateForm from '../components/DayTemplateForm.vue'
 import FoodForm from '../components/FoodForm.vue'
 import FoodPicker from '../components/FoodPicker.vue'
 import MealBuilder from '../components/MealBuilder.vue'
 import MealTemplateForm from '../components/MealTemplateForm.vue'
 import { localMiddayFromISODate, toISODate } from '../dates'
+import { cloneDayTemplate, listDayTemplates } from '../day-templates'
 import { useLogStore } from '../stores/log'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
-import type { Food, MealTemplate } from '../types'
+import type { DayTemplate, Food, MealTemplate } from '../types'
 
 const store = useLogStore()
 
@@ -34,7 +37,14 @@ async function loadTemplates() {
   templates.value = await listMealTemplates()
 }
 
-onMounted(loadTemplates)
+/** Days have no seed path, so this is the store's list and nothing else (#52). */
+const days = ref<DayTemplate[]>([])
+
+async function loadDays() {
+  days.value = await listDayTemplates()
+}
+
+onMounted(() => Promise.all([loadTemplates(), loadDays()]))
 
 /**
  * Defaults to today on every visit rather than remembering the last pick. A
@@ -48,6 +58,11 @@ const today = toISODate()
 
 const choice = ref<
   | { kind: 'template'; template: MealTemplate }
+  /** The saved days, one step in, and then one of them running (#52). */
+  | { kind: 'days' }
+  | { kind: 'day'; template: DayTemplate }
+  /** Composing a day, either from nothing or from a copy of an existing one. */
+  | { kind: 'new-day'; draft?: DayTemplate }
   | { kind: 'food' }
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
@@ -91,6 +106,27 @@ async function savedTemplate(template: MealTemplate) {
 }
 
 /**
+ * What a finished day says, given how much of it was actually logged — a day
+ * whose lunch was skipped did not log the day.
+ *
+ * Reads the running day off `choice` rather than taking it as an argument: a
+ * template expression cannot narrow the union inside an event handler, and the
+ * alternative is a ternary in the markup.
+ */
+function finishDay(count: number) {
+  const current = choice.value
+  const name = current?.kind === 'day' ? current.template.name : 'the day'
+
+  finish(`${count} meal(s) from ${name}`)
+}
+
+/** Same reasoning for a day: whoever just described one is about to eat it. */
+async function savedDay(template: DayTemplate) {
+  await loadDays()
+  choice.value = { kind: 'day', template }
+}
+
+/**
  * One step out rather than all the way out.
  *
  * With the meals behind an entry of their own (#98) a single coarse back button
@@ -101,26 +137,41 @@ async function savedTemplate(template: MealTemplate) {
 function goBack() {
   const current = choice.value
 
-  if (current?.kind === 'template') choice.value = { kind: 'meals' }
-  else if (current?.kind === 'variation' && current.source) choice.value = { kind: 'variation' }
-  else choice.value = undefined
+  if (current?.kind === 'template' || current?.kind === 'new-template') {
+    choice.value = { kind: 'meals' }
+  } else if (current?.kind === 'day' || current?.kind === 'new-day') {
+    choice.value = { kind: 'days' }
+  } else if (current?.kind === 'variation' && current.source) {
+    choice.value = { kind: 'variation' }
+  } else {
+    choice.value = undefined
+  }
 }
 
 /**
  * A count and the first couple of names. Naming them all would reintroduce the
  * unbounded growth this entry exists to contain, one line further down.
  */
-const mealsSummary = computed(() => {
-  const names = templates.value.map((match) => match.template.name)
+const summarise = (names: string[]) => {
   const shown = names.slice(0, 2).join(', ')
 
   return `${names.length} saved${shown ? ` · ${shown}` : ''}${names.length > 2 ? '…' : ''}`
-})
+}
+
+const mealsSummary = computed(() => summarise(templates.value.map((match) => match.template.name)))
+
+/** Nothing ships, so an empty list is the normal first state, not a fault. */
+const daysSummary = computed(() =>
+  days.value.length === 0
+    ? 'None yet · build one from your meals'
+    : summarise(days.value.map((template) => template.name)),
+)
 
 const backLabel = computed(() => {
   const current = choice.value
 
-  if (current?.kind === 'template') return '← Other meals'
+  if (current?.kind === 'template' || current?.kind === 'new-template') return '← Other meals'
+  if (current?.kind === 'day' || current?.kind === 'new-day') return '← Other days'
   if (current?.kind === 'variation' && current.source) return '← Other foods'
 
   return '← Everything else'
@@ -160,6 +211,15 @@ async function logFood(food: Food, grams: number) {
            clone (#51) and a barcode scan (#15) each become an entry here
            rather than another block on the summary screen. -->
       <ul v-if="!choice" class="options">
+        <li>
+          <!-- Above the meals because a day is made of them, and because
+               reaching for the whole day is the shortcut worth finding
+               first (#52). -->
+          <button type="button" @click="choice = { kind: 'days' }">
+            A usual day
+            <span class="detail">{{ daysSummary }}</span>
+          </button>
+        </li>
         <li>
           <!-- One entry rather than one per template: a meal is a thing and the
                rest of this list is verbs, and the templates grow without limit
@@ -215,6 +275,50 @@ async function logFood(food: Food, grams: number) {
           </li>
         </ul>
 
+        <ul v-else-if="choice.kind === 'days'" class="options">
+          <li v-for="template in days" :key="template.id" class="with-aside">
+            <button type="button" @click="choice = { kind: 'day', template }">
+              {{ template.name }}
+              <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
+            </button>
+            <!-- Beside the day it copies: "like my workday, but" is how the
+                 second one gets made (#52). -->
+            <button
+              type="button"
+              class="aside"
+              :aria-label="`Copy ${template.name}`"
+              @click="
+                choice = {
+                  kind: 'new-day',
+                  draft: cloneDayTemplate(template, `${template.name} (copy)`),
+                }
+              "
+            >
+              Copy
+            </button>
+          </li>
+          <li>
+            <button type="button" @click="choice = { kind: 'new-day' }">
+              Build a day
+              <span class="detail">Put your meals in the order you eat them</span>
+            </button>
+          </li>
+        </ul>
+
+        <DayRunner
+          v-else-if="choice.kind === 'day'"
+          :template="choice.template"
+          :eaten-at="backdatedTo"
+          @done="finishDay"
+        />
+
+        <DayTemplateForm
+          v-else-if="choice.kind === 'new-day'"
+          :draft="choice.draft"
+          @saved="savedDay"
+          @cancel="goBack"
+        />
+
         <MealBuilder
           v-else-if="choice.kind === 'template'"
           :template="choice.template"
@@ -236,7 +340,7 @@ async function logFood(food: Food, grams: number) {
         <MealTemplateForm
           v-else-if="choice.kind === 'new-template'"
           @saved="savedTemplate"
-          @cancel="choice = undefined"
+          @cancel="goBack"
         />
 
         <FoodForm v-else @submit="logFood" />
@@ -320,6 +424,29 @@ input:hover {
 
 .options button:hover {
   border-color: var(--primary);
+}
+
+/* A row that carries a second action beside its main one. */
+.with-aside {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.with-aside button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.options .aside {
+  /* Flex, not the grid .options button uses: the label is alone here and
+     belongs in the middle of a row as tall as the one beside it. */
+  display: flex;
+  align-items: center;
+  width: auto;
+  font-size: var(--text-caption);
+  color: var(--ink-soft);
+  padding: var(--space-2) var(--space-4);
 }
 
 .detail {
