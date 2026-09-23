@@ -31,6 +31,19 @@ const meals = ref<string[]>([...(draft?.mealTemplateIds ?? [])])
 const available = ref<MealTemplateMatch[]>([])
 const adding = ref('')
 
+/**
+ * The id this form will save under, decided once.
+ *
+ * Minting it inside save() made every call a different day, so two taps on the
+ * button stored two copies of the same thing. Fixed here rather than only with
+ * the in-flight guard below: a save that fails and is retried should replace
+ * the row it could not write, not add a second one.
+ */
+const id = draft?.id ?? crypto.randomUUID()
+
+/** True while a write is in flight, so a second tap cannot start another. */
+const saving = ref(false)
+
 onMounted(async () => {
   available.value = await listMealTemplates()
   adding.value = available.value[0]?.template.id ?? ''
@@ -61,22 +74,28 @@ const problems = computed(() => {
   return found
 })
 
-const canSave = computed(() => problems.value.length === 0)
+const canSave = computed(() => problems.value.length === 0 && !saving.value)
 
 async function save() {
   if (!canSave.value) return
 
+  saving.value = true
+
   const template: DayTemplate = {
     // A clone keeps the id cloneDayTemplate already gave it; a day built from
-    // scratch gets one here. Either way it is new — this form never edits a
+    // scratch gets one at setup. Either way it is new — this form never edits a
     // stored day in place (#101).
-    id: draft?.id ?? crypto.randomUUID(),
+    id,
     name: name.value.trim(),
     mealTemplateIds: [...meals.value],
   }
 
-  await dayTemplates.put(template)
-  emit('saved', template)
+  try {
+    await dayTemplates.put(template)
+    emit('saved', template)
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 

@@ -401,6 +401,23 @@ describe('LogView', () => {
     expect(optionNamed(wrapper, 'A usual day')).toBeDefined()
   })
 
+  it('says nothing was logged when every meal of a day was skipped', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Workday').trigger('click')
+    await flushPromises()
+
+    await buttonNamed(wrapper, 'Skip this meal').trigger('click')
+    await buttonNamed(wrapper, 'Done').trigger('click')
+
+    // "Logged 0 meal(s)" over an empty write claims intake that was never
+    // recorded (§3).
+    expect(wrapper.find('.confirmation').text()).toBe('Nothing logged from Workday.')
+    expect(wrapper.find('.confirmation a').exists()).toBe(false)
+    expect(await db.logEntries.count()).toBe(0)
+  })
+
   it('goes from building a day straight into running it', async () => {
     const wrapper = await render()
     await openDays(wrapper)

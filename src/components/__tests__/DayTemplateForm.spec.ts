@@ -158,6 +158,22 @@ describe('DayTemplateForm', () => {
     expect(stored.map((day) => day.id)).toEqual(['copy-id'])
   })
 
+  it('stores one day however quickly the button is pressed twice', async () => {
+    const wrapper = await render()
+    await wrapper.find('#day-name').setValue('Workday')
+    await addMeal(wrapper, 'porridge')
+
+    // Both clicks land before the first write resolves; without the guard each
+    // minted its own id, so the list grew a second identical day.
+    const save = buttonNamed(wrapper, 'Save the day')
+    save.trigger('click')
+    save.trigger('click')
+    await flushPromises()
+
+    expect(await db.dayTemplates.count()).toBe(1)
+    expect(wrapper.emitted('saved')).toHaveLength(1)
+  })
+
   it('names a meal that is no longer saved rather than dropping it', async () => {
     const wrapper = await render({ id: 'day', name: 'Workday', mealTemplateIds: ['gone'] })
 

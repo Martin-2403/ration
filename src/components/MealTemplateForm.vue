@@ -40,6 +40,18 @@ const foods = ref(new Map<string, Food>())
 /** Which slot is currently choosing a food, if any. */
 const pickingFor = ref<number | undefined>(undefined)
 
+/**
+ * The id this form will save under, decided once.
+ *
+ * Minting it inside save() made every call a different meal, so two taps on
+ * the button stored two copies of the same thing; a retry after a failed write
+ * would have done the same.
+ */
+const id = crypto.randomUUID()
+
+/** True while a write is in flight, so a second tap cannot start another. */
+const saving = ref(false)
+
 onMounted(() => {
   // Nothing to resolve on a blank form; kept so a future prefill path (#52's
   // clone) has somewhere to load into.
@@ -87,13 +99,17 @@ const problems = computed(() =>
   }),
 )
 
-const canSave = computed(() => name.value.trim().length > 0 && problems.value.length === 0)
+const canSave = computed(
+  () => name.value.trim().length > 0 && problems.value.length === 0 && !saving.value,
+)
 
 async function save() {
   if (!canSave.value) return
 
+  saving.value = true
+
   const template: MealTemplate = {
-    id: crypto.randomUUID(),
+    id,
     name: name.value.trim(),
     slots: slots.value.map((slot, index): MealSlot => {
       const amount = amounts.value[index]
@@ -116,8 +132,12 @@ async function save() {
     }),
   }
 
-  await mealTemplates.put(template)
-  emit('saved', template)
+  try {
+    await mealTemplates.put(template)
+    emit('saved', template)
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 
