@@ -28,6 +28,21 @@ export interface MealTemplate {
   slots: MealSlot[]
 }
 
+/**
+ * An ordered set of meals that normally go together — "a workday" (#52).
+ *
+ * The meals are referenced by id, not copied: a correction to a meal template
+ * has to reach every day that uses it, the same way a corrected food reaches
+ * every template naming it. The cost is that a day can name a meal that has
+ * since been deleted, which resolves to a reported gap rather than silence.
+ */
+export interface DayTemplate {
+  id: string
+  name: string
+  /** Meal template ids, in the order they are eaten. Repeats are allowed. */
+  mealTemplateIds: string[]
+}
+
 // Food by mass or supplement by dose. One union keeps §8's single summing path
 // true: nutrientsFor() resolves the quantity at the leaf.
 export type LogItem =

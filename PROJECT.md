@@ -313,6 +313,10 @@ interface MealSlot {
 
 interface MealTemplate { id: string; name: string; slots: MealSlot[]; }
 
+// An ordered set of meals that normally go together — "a workday". Meals are
+// referenced by id, never copied, so correcting one corrects every day using it.
+interface DayTemplate { id: string; name: string; mealTemplateIds: string[]; }
+
 // An item is either a food by mass or a supplement by dose. One union keeps §8's
 // single summing path literally true — nutrientsFor() resolves quantity at the leaf,
 // and a day's totals stay one query and one snapshot.
@@ -382,6 +386,14 @@ without the template (§9, immutable history).
 **Quick-log.** Scanning a barcode and eating that one thing is the most common real
 flow, and it must not require a template: a `LogEntry` with no `templateId` and a
 single food item with no `slotId`. The resolver (§4) hands off straight into this.
+
+**Day templates.** A `DayTemplate` names the meals of a typical day, and running
+one walks them through the ordinary builder: amounts are confirmed per slot and
+each meal becomes its own real `LogEntry`, stamped when it is logged. It is a
+shortcut through repetitive logging, not a plan — intended-but-unconfirmed intake
+is §8's `schedule-assumed`, and mixing the two would put planned values into the
+evaluation (§9). A day that names a meal since deleted reports the gap rather than
+running the rest.
 
 **Manual food entry (MVP).** Fresh food, bulk goods and anything home-cooked have no
 barcode, and OFF misses plenty of products that do. A hand-entered food is an

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import type { NewUserGoal } from '../data/nutrients'
-import { db, foods, log, mealTemplates, nutrientGoals } from '../db'
+import { db, dayTemplates, foods, log, mealTemplates, nutrientGoals } from '../db'
 import type { NewLogEntry } from '../types'
 
 const entry = (timestamp: number, name = 'Porridge'): NewLogEntry => ({
@@ -27,6 +27,7 @@ beforeEach(async () => {
   await Promise.all([
     db.foods.clear(),
     db.mealTemplates.clear(),
+    db.dayTemplates.clear(),
     db.logEntries.clear(),
     db.nutrientGoals.clear(),
   ])
@@ -74,6 +75,32 @@ describe('meal template repository', () => {
     await mealTemplates.remove('breakfast')
 
     expect(await mealTemplates.list()).toEqual([])
+  })
+})
+
+describe('day template repository', () => {
+  const day = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+
+  it('round-trips a day by id', async () => {
+    await dayTemplates.put(day)
+
+    expect((await dayTemplates.get('workday'))?.mealTemplateIds).toEqual(['porridge'])
+  })
+
+  it('refuses a day that names no meals', async () => {
+    // It would run to completion having logged nothing.
+    await expect(dayTemplates.put({ ...day, mealTemplateIds: [] })).rejects.toThrow('names no meals')
+  })
+
+  it('refuses a day with a blank name', async () => {
+    await expect(dayTemplates.put({ ...day, name: '  ' })).rejects.toThrow('needs a name')
+  })
+
+  it('removes by id', async () => {
+    await dayTemplates.put(day)
+    await dayTemplates.remove('workday')
+
+    expect(await dayTemplates.list()).toEqual([])
   })
 })
 
