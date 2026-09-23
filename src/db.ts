@@ -19,11 +19,19 @@ import {
   type NewUserGoal,
   type UserGoal,
 } from './data/nutrients'
-import type { Food, LogEntry, MealTemplate, NewLogEntry, StoredLogEntry } from './types'
+import type {
+  DayTemplate,
+  Food,
+  LogEntry,
+  MealTemplate,
+  NewLogEntry,
+  StoredLogEntry,
+} from './types'
 
 const db = new Dexie('ration') as Dexie & {
   foods: EntityTable<Food, 'id'>
   mealTemplates: EntityTable<MealTemplate, 'id'>
+  dayTemplates: EntityTable<DayTemplate, 'id'>
   // Typed by the stored shape, where the id is always present. Using LogEntry
   // here would make Dexie infer add() as returning `number | undefined`,
   // because LogEntry.id is optional for entries that have not been saved yet.
@@ -48,6 +56,12 @@ db.version(2).stores({
   // clearing one goal into a read-modify-write over all of them, and two tabs
   // saving at once would drop a write; a delete of one row cannot.
   nutrientGoals: 'nutrient',
+})
+
+// Days name their meals by id, so there is nothing here to index but the key:
+// the list is read whole and ordered by name in memory, as the food cache is.
+db.version(3).stores({
+  dayTemplates: 'id',
 })
 
 export { db }
@@ -89,6 +103,14 @@ export interface MealTemplateRepository {
   remove(id: string): Promise<void>
 }
 
+export interface DayTemplateRepository {
+  list(): Promise<DayTemplate[]>
+  get(id: string): Promise<DayTemplate | undefined>
+  /** Upsert. Rejects a day that has no name or names no meals. */
+  put(template: DayTemplate): Promise<void>
+  remove(id: string): Promise<void>
+}
+
 export interface LogRepository {
   /** Stamps createdAt and updatedAt, returns the new id. */
   add(entry: NewLogEntry): Promise<number>
@@ -125,6 +147,31 @@ export const mealTemplates: MealTemplateRepository = {
   },
   async remove(id) {
     await db.mealTemplates.delete(id)
+  },
+}
+
+export const dayTemplates: DayTemplateRepository = {
+  list: () => db.dayTemplates.toArray(),
+
+  get: (id) => db.dayTemplates.get(id),
+
+  // Guarded at the write boundary, like a goal target: a day with no meals runs
+  // to completion having logged nothing, and an unnamed one cannot be told
+  // apart in a list. A restored backup arrives here too (§10).
+  async put(template) {
+    if (template.name.trim().length === 0) {
+      throw new Error('a day template needs a name')
+    }
+
+    if (template.mealTemplateIds.length === 0) {
+      throw new Error(`day template ${template.id} names no meals`)
+    }
+
+    await db.dayTemplates.put(plain(template))
+  },
+
+  async remove(id) {
+    await db.dayTemplates.delete(id)
   },
 }
 
