@@ -413,7 +413,7 @@ describe('LogView', () => {
 
     // "Logged 0 meal(s)" over an empty write claims intake that was never
     // recorded (§3).
-    expect(wrapper.find('.confirmation').text()).toContain('Nothing logged from Workday')
+    expect(wrapper.find('.confirmation').text()).toBe('Nothing logged from Workday.')
     expect(wrapper.find('.confirmation a').exists()).toBe(false)
     expect(await db.logEntries.count()).toBe(0)
   })

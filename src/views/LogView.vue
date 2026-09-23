@@ -212,7 +212,10 @@ async function logFood(food: Food, grams: number) {
         Logged {{ outcome.what }} on {{ outcome.date }}.
         <RouterLink to="/">See the day</RouterLink>
       </template>
-      <template v-else>Nothing logged from {{ outcome.what }} — every meal was skipped.</template>
+      <!-- No reason given: the count does not carry one, and a run reaches zero
+           by skipping every meal or by finding none of them still saved. The
+           runner's closing panel names the meals it could not log. -->
+      <template v-else>Nothing logged from {{ outcome.what }}.</template>
     </p>
 
     <template v-if="validDate">
