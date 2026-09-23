@@ -6,7 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addLocalDays, localMiddayFromISODate, startOfLocalDay, toISODate } from '../../dates'
-import { db, mealTemplates } from '../../db'
+import { db, dayTemplates, mealTemplates } from '../../db'
 import router from '../../router'
 import LogView from '../LogView.vue'
 
@@ -34,6 +34,12 @@ const openMeals = async (wrapper: Awaited<ReturnType<typeof render>>) => {
   await flushPromises()
 }
 
+/** Days sit one step in as well, above the meals they are made of (#52). */
+const openDays = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+  await optionNamed(wrapper, 'A usual day').trigger('click')
+  await flushPromises()
+}
+
 const optionNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string) =>
   wrapper.findAll('.options button').find((button) => button.text().includes(label))!
 
@@ -43,7 +49,12 @@ const buttonNamed = (wrapper: Awaited<ReturnType<typeof render>>, label: string)
 const yesterday = () => toISODate(addLocalDays(startOfLocalDay(), -1))
 
 beforeEach(async () => {
-  await Promise.all([db.logEntries.clear(), db.foods.clear(), db.mealTemplates.clear()])
+  await Promise.all([
+    db.logEntries.clear(),
+    db.foods.clear(),
+    db.mealTemplates.clear(),
+    db.dayTemplates.clear(),
+  ])
   setActivePinia(createPinia())
 })
 
@@ -69,15 +80,24 @@ describe('LogView', () => {
     // rather than another block on the summary screen.
     // One entry for meals rather than one per template: they are things among
     // verbs, and only they grow (#98).
+    expect(optionNamed(wrapper, 'A usual day')).toBeDefined()
     expect(optionNamed(wrapper, 'A meal')).toBeDefined()
-    // The entry names a couple of meals in its summary, so asserting the
-    // absence of "Porridge" would only be catching that text. The count is the
-    // claim: four entries, however many templates exist.
-    expect(wrapper.findAll('.options button')).toHaveLength(4)
+    // The entries name a couple of their contents in the summary, so asserting
+    // the absence of "Porridge" would only be catching that text. The count is
+    // the claim: five entries, however many templates exist.
+    expect(wrapper.findAll('.options button')).toHaveLength(5)
     expect(optionNamed(wrapper, 'A meal').text()).toContain('1 saved · Porridge')
     expect(optionNamed(wrapper, 'A food you have already')).toBeDefined()
     expect(optionNamed(wrapper, 'A variation of a food')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeDefined()
+  })
+
+  it('says a day has to be built before there is one to run', async () => {
+    const wrapper = await render()
+
+    // Nothing ships: a usual day is personal in a way a porridge recipe is
+    // not, so an empty list is the normal first state (#52).
+    expect(optionNamed(wrapper, 'A usual day').text()).toContain('None yet')
   })
 
   it('offers the saved food before hand entry', async () => {
@@ -338,5 +358,115 @@ describe('LogView', () => {
 
     expect(optionNamed(wrapper, 'A meal')).toBeDefined()
     expect(await db.logEntries.count()).toBe(0)
+  })
+
+  it('runs a saved day meal by meal, against the chosen date', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await wrapper.find('#log-date').setValue(yesterday())
+    await openDays(wrapper)
+
+    expect(optionNamed(wrapper, 'Workday').text()).toContain('1 meal(s)')
+    await optionNamed(wrapper, 'Workday').trigger('click')
+    await flushPromises()
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+
+    // A day is a shortcut through repetitive logging, not a second way of
+    // writing entries: the meal went through the ordinary builder and the
+    // date came from the log screen as it does everywhere else (#52, #61).
+    const [entry] = await db.logEntries.toArray()
+    expect(entry!.name).toBe('Porridge')
+    expect(entry!.timestamp).toBe(localMiddayFromISODate(yesterday()))
+  })
+
+  it('confirms how much of the day was logged, not that the day was logged', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Workday').trigger('click')
+    await flushPromises()
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Logged 1 of 1'))
+
+    await buttonNamed(wrapper, 'Done').trigger('click')
+
+    // A day whose lunch was skipped did not log the day, and the confirmation
+    // says which day it landed on, as every other path here does (#61).
+    expect(wrapper.find('.confirmation').text()).toContain('Logged 1 meal(s) from Workday')
+    expect(wrapper.find('.confirmation').text()).toContain(toISODate())
+    // Back among the options, so the next thing eaten is one tap away.
+    expect(optionNamed(wrapper, 'A usual day')).toBeDefined()
+  })
+
+  it('goes from building a day straight into running it', async () => {
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Build a day').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#day-name').setValue('Workday')
+    await wrapper.find('#day-add-meal').setValue('porridge')
+    await buttonNamed(wrapper, 'Add meal').trigger('click')
+    await buttonNamed(wrapper, 'Save the day').trigger('click')
+    await flushPromises()
+    // Twice: the save awaits the write, and the handler then awaits a re-read
+    // of the list before switching the view.
+    await flushPromises()
+
+    expect(await db.dayTemplates.count()).toBe(1)
+    expect(wrapper.text()).toContain('Meal 1 of 1')
+  })
+
+  it('copies a day into a new one rather than editing it', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.attributes('aria-label') === 'Copy Workday')!
+      .trigger('click')
+    await flushPromises()
+
+    // "Like my workday, but" is how the second one gets made (#52).
+    expect((wrapper.find('#day-name').element as HTMLInputElement).value).toBe('Workday (copy)')
+
+    await buttonNamed(wrapper, 'Save the day').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const stored = await db.dayTemplates.toArray()
+    expect(stored.map((day) => day.name).sort()).toEqual(['Workday', 'Workday (copy)'])
+  })
+
+  it('steps back from a running day to the other days', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Workday').trigger('click')
+    await flushPromises()
+
+    await buttonNamed(wrapper, '← Other days').trigger('click')
+
+    // One step out, as everywhere else on this screen (#98, #95).
+    expect(optionNamed(wrapper, 'Workday')).toBeDefined()
+    expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
+    expect(await db.logEntries.count()).toBe(0)
+  })
+
+  it('cancels building a meal back to the meals, not out of them', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Build a meal').trigger('click')
+    await flushPromises()
+
+    // Cancel used to land on the options, two steps from where it started.
+    await buttonNamed(wrapper, 'Cancel').trigger('click')
+
+    expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
+    expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
   })
 })
