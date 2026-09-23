@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { addLocalDays, localMiddayFromISODate, startOfLocalDay, toISODate } from '../../dates'
 import { db, dayTemplates, mealTemplates } from '../../db'
 import router from '../../router'
+import { useLogStore } from '../../stores/log'
 import LogView from '../LogView.vue'
 
 const render = async () => {
@@ -130,6 +131,40 @@ describe('LogView', () => {
     // FoodForm has, so neither component knows about #61.
     expect(entry!.timestamp).toBe(localMiddayFromISODate(yesterday()))
     expect(entry!.items[0]).toMatchObject({ foodId: 'banana', grams: 120 })
+  })
+
+  it('logs a picked food once however quickly the button is pressed twice', async () => {
+    // Spied before the view mounts: the store is a singleton per pinia, so
+    // this is the same object LogView resolves, and it dies with the pinia
+    // that beforeEach replaces.
+    const store = useLogStore()
+    vi.spyOn(store, 'logFood')
+
+    const wrapper = await render()
+    await optionNamed(wrapper, 'A food you have already').trigger('click')
+    await flushPromises()
+
+    const banana = wrapper
+      .findAll('.results button')
+      .find((button) => button.text().includes('Banana'))!
+    await banana.trigger('click')
+    await wrapper.find('#picker-grams').setValue('120')
+
+    // FoodPicker keeps its chosen food and amount after emitting, so the guard
+    // has to sit where the await is (#106).
+    const button = wrapper.find('button.primary')
+    button.trigger('click')
+    button.trigger('click')
+    await flushPromises()
+
+    // Counting the calls, not the rows: both emits are synchronous, while a
+    // row only lands after a real timer tick — so counting rows after a flush
+    // called an unguarded double write a pass.
+    expect(store.logFood).toHaveBeenCalledTimes(1)
+
+    // Settle before the test ends: a row landing after the next test's
+    // beforeEach has cleared the table turns up as that test's entry.
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
   })
 
   it('logs a meal against today at the time of the write', async () => {

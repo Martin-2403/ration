@@ -183,13 +183,30 @@ const backLabel = computed(() => {
   return '← Everything else'
 })
 
-async function logFood(food: Food, grams: number) {
-  if (!validDate.value) return
+/**
+ * True while an entry is being written.
+ *
+ * The guard lives here rather than in the pickers because this is where the
+ * await is: FoodPicker keeps its chosen food and amount after emitting, so two
+ * taps on its log button emitted twice and wrote two entries (#106). FoodForm
+ * clears itself on submit and was already safe, but it submits through the
+ * same path and gains nothing by being the exception.
+ */
+const writing = ref(false)
 
-  // Same reasoning as backdatedTo: today falls through to the store's own
-  // default, which stamps the write time rather than a stale one.
-  await store.logFood(food, grams, backdatedTo.value ?? Date.now())
-  finish(food.name)
+async function logFood(food: Food, grams: number) {
+  if (!validDate.value || writing.value) return
+
+  writing.value = true
+
+  try {
+    // Same reasoning as backdatedTo: today falls through to the store's own
+    // default, which stamps the write time rather than a stale one.
+    await store.logFood(food, grams, backdatedTo.value ?? Date.now())
+    finish(food.name)
+  } finally {
+    writing.value = false
+  }
 }
 </script>
 

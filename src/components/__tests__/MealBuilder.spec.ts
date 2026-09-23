@@ -36,6 +36,22 @@ describe('MealBuilder', () => {
     )
   })
 
+  it('logs once however quickly the button is pressed twice', async () => {
+    const wrapper = await render()
+
+    // Both clicks land before the write resolves. A duplicate entry doubles
+    // the day's intake, and §9 reads the day's totals as measured — nothing in
+    // the log distinguishes it from having eaten two portions (#106).
+    const button = wrapper.findAll('button').find((b) => b.text() === 'Log meal')!
+    button.trigger('click')
+    button.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(await db.logEntries.count()).toBe(1)
+    expect(wrapper.emitted('logged')).toHaveLength(1)
+  })
+
   it('logs an amount typed with a decimal comma', async () => {
     const wrapper = await render()
     await amountFields(wrapper)[0]!.setValue('12,5')
