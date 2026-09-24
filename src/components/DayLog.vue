@@ -38,7 +38,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
                 : 'No data'
             }}
           </span>
-          <span class="actions">
+          <span class="entry-actions">
             <button
               type="button"
               :aria-label="`Edit ${entry.name}`"
@@ -107,7 +107,7 @@ li {
 }
 
 /* A grid item is min-width: auto, so the name's own longest word set a floor
-   and the row could not shrink below the sum of all five tracks — which
+   and the row could not shrink below the sum of the row's tracks — which
    widened the whole page rather than clipping (#109, the same fault #102
    fixed on the log screen). overflow-wrap covers a single word too long for
    the column on its own, which a phone-length dish name can still manage. */
@@ -126,17 +126,17 @@ li {
   text-align: right;
 }
 
-.actions {
+.entry-actions {
   display: flex;
   gap: var(--space-2);
 }
 
-/* Five tracks need about 430px with their gaps, which a phone does not have:
-   below that the row folds to two, time and kcal sharing the top line as a
-   meta row and the name and actions below it. Measured against this row
-   rather than reused from elsewhere — the same reasoning as MealBuilder's
-   34rem (#102): a breakpoint guessed from a different row is a coincidence,
-   not a fit. */
+/* The row's four tracks need about 430px with their gaps, which a phone does
+   not have: below that it folds to three lines — time and kcal share the
+   top one as a meta row, the name gets its own, and the actions sit
+   right-aligned on a third. Measured against this row rather than reused
+   from elsewhere — the same reasoning as MealBuilder's 34rem (#102): a
+   breakpoint guessed from a different row is a coincidence, not a fit. */
 @media (max-width: 30rem) {
   .summary {
     grid-template-columns: auto 1fr;
@@ -159,7 +159,7 @@ li {
     grid-area: name;
   }
 
-  .actions {
+  .entry-actions {
     grid-area: actions;
     justify-content: flex-end;
   }
