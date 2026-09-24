@@ -10,7 +10,7 @@
  * summary screen happened to be showing, which meant viewing the 27th and
  * logging wrote the entry against today without saying so (#61).
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import DayRunner from '../components/DayRunner.vue'
 import DayTemplateForm from '../components/DayTemplateForm.vue'
@@ -20,7 +20,7 @@ import MealBuilder from '../components/MealBuilder.vue'
 import MealTemplateForm from '../components/MealTemplateForm.vue'
 import { dayTemplates, mealTemplates } from '../db'
 import { localMiddayFromISODate, toISODate } from '../dates'
-import { cloneDayTemplate, listDayTemplates } from '../day-templates'
+import { cloneDayTemplate, daysUsingMeal, listDayTemplates } from '../day-templates'
 import { useLogStore } from '../stores/log'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
 import type { DayTemplate, Food, MealTemplate } from '../types'
@@ -163,24 +163,43 @@ const removingMealId = ref<string | undefined>()
 const removingDayId = ref<string | undefined>()
 
 /**
- * Saved days that still name a meal, so removing it is a visible choice
- * rather than a silent one. resolveDayTemplate already reports the gap at
- * run time (§3) — this says so before the meal is gone, not after.
+ * Removing is cleared only after the reload, not before.
+ *
+ * Clearing it first left a window between the write resolving and the list
+ * catching up where `templates`/`days` still held the just-deleted record —
+ * the armed row would flip back to its ordinary Edit/Remove buttons for
+ * something no longer in Dexie, and tapping Edit there opened a form whose
+ * Save is a blind upsert (#101): it would have written the deleted record
+ * straight back, undoing the removal without a word.
  */
-const daysNaming = (mealId: string) =>
-  days.value.filter((template) => template.mealTemplateIds.includes(mealId))
-
 async function removeTemplate(id: string) {
   await mealTemplates.remove(id)
-  removingMealId.value = undefined
   await loadTemplates()
+  removingMealId.value = undefined
 }
 
 async function removeDay(id: string) {
   await dayTemplates.remove(id)
-  removingDayId.value = undefined
   await loadDays()
+  removingDayId.value = undefined
 }
+
+/**
+ * Clears whichever removal is armed whenever the screen moves to something
+ * else — including back to the same list by another route, such as saving an
+ * edit to a different row.
+ *
+ * Without this, arming Remove on one item and then leaving the list any way
+ * other than its own Cancel or Remove left the id armed. Coming back to the
+ * list — even for something unrelated — dropped the user straight back into
+ * that row's confirm panel with no fresh tap of their own, one accidental tap
+ * on a relocated Remove button away from deleting something they only meant
+ * to look at.
+ */
+watch(choice, () => {
+  removingMealId.value = undefined
+  removingDayId.value = undefined
+})
 
 /**
  * One step out rather than all the way out.
@@ -373,12 +392,15 @@ async function logFood(food: Food, grams: number) {
                  definition a day's slot falls back to, and the day names
                  still using it are worth seeing before it is gone (#101). -->
             <div v-else class="confirm-remove">
+              <!-- Computed once rather than the three separate calls this
+                   replaced (guard, count, names) — the array itself, so the
+                   template reads its length and its names off one result. -->
               <p>
                 Remove {{ match.template.name }}?
-                <template v-if="daysNaming(match.template.id).length > 0">
-                  {{ daysNaming(match.template.id).length }} day(s) still name it —
+                <template v-if="daysUsingMeal(days, match.template.id).length > 0">
+                  {{ daysUsingMeal(days, match.template.id).length }} day(s) still name it —
                   {{
-                    daysNaming(match.template.id)
+                    daysUsingMeal(days, match.template.id)
                       .map((day) => day.name)
                       .join(', ')
                   }}
@@ -386,12 +408,22 @@ async function logFood(food: Food, grams: number) {
                 </template>
               </p>
               <span class="confirm-actions">
-                <button type="button" class="ghost small" @click="removingMealId = undefined">
+                <!-- Named like every other row action (Edit, Copy, the arm
+                     button this replaces), so two stored items never share a
+                     button's visible text and a screen reader says which one
+                     is about to go. -->
+                <button
+                  type="button"
+                  class="ghost small"
+                  :aria-label="`Cancel removing ${match.template.name}`"
+                  @click="removingMealId = undefined"
+                >
                   Cancel
                 </button>
                 <button
                   type="button"
                   class="danger small"
+                  :aria-label="`Remove ${match.template.name}`"
                   @click="removeTemplate(match.template.id)"
                 >
                   Remove
@@ -454,10 +486,20 @@ async function logFood(food: Food, grams: number) {
                    (#101). -->
               <p>Remove {{ template.name }}? Its meals stay saved on their own.</p>
               <span class="confirm-actions">
-                <button type="button" class="ghost small" @click="removingDayId = undefined">
+                <button
+                  type="button"
+                  class="ghost small"
+                  :aria-label="`Cancel removing ${template.name}`"
+                  @click="removingDayId = undefined"
+                >
                   Cancel
                 </button>
-                <button type="button" class="danger small" @click="removeDay(template.id)">
+                <button
+                  type="button"
+                  class="danger small"
+                  :aria-label="`Remove ${template.name}`"
+                  @click="removeDay(template.id)"
+                >
                   Remove
                 </button>
               </span>

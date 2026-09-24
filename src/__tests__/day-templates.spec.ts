@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   cloneDayTemplate,
+  daysUsingMeal,
   findDayTemplate,
   listDayTemplates,
   moveMeal,
@@ -155,5 +156,27 @@ describe('moveMeal', () => {
     moveMeal(order, 0, 1)
 
     expect(order).toEqual(['breakfast', 'lunch'])
+  })
+})
+
+describe('daysUsingMeal', () => {
+  it('finds every day that names the meal, in the order given', () => {
+    const workday = day('workday', 'Workday', ['porridge', 'lunch'])
+    const restDay = day('rest', 'Rest day', ['lunch'])
+    const other = day('other', 'Something else', ['porridge'])
+
+    expect(daysUsingMeal([workday, restDay, other], 'lunch')).toEqual([workday, restDay])
+  })
+
+  it('finds nothing when no day names the meal', () => {
+    const other = day('other', 'Something else', ['porridge'])
+
+    expect(daysUsingMeal([other], 'lunch')).toEqual([])
+  })
+
+  it('counts a day once even if it names the meal twice', () => {
+    const twice = day('twice', 'Twice', ['lunch', 'lunch'])
+
+    expect(daysUsingMeal([twice], 'lunch')).toEqual([twice])
   })
 })
