@@ -41,6 +41,17 @@ const logging = ref(false)
 
 onMounted(draft.load)
 
+/**
+ * `busy` is paired with `logging` by hand at each exit rather than derived
+ * from a `watch` on it — tried, and reverted: `watch`'s callback runs on
+ * Vue's own scheduler, a microtask after the ref changes, and `emit('logged')`
+ * just above already advanced DayRunner's `step` by then, keying this
+ * instance away before that scheduled callback got to run. The deferred
+ * `busy: false` for the meal that just finished was silently dropped, along
+ * with everyone after it — Skip stayed disabled for the rest of the day.
+ * Emitting inline, in the same synchronous stack as the assignment, is what
+ * guarantees delivery before any of that can happen (#108).
+ */
 async function logMeal() {
   if (logging.value) return
 

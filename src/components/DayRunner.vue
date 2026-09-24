@@ -56,6 +56,16 @@ const current = computed(() => meals.value[step.value])
 const finished = computed(() => ready.value && step.value >= meals.value.length)
 
 function advance(didLog: boolean) {
+  // Belt and braces beside :disabled="writing" on the Skip button: the
+  // attribute only takes effect once Vue paints it, which is a microtask
+  // after the click that sets `writing`, and a script firing two events in
+  // the same turn — not a real tap, which always lands in its own — would
+  // land the second between those two points. A skip while busy is a no-op
+  // rather than the race #108 was named for; a completed log is never
+  // blocked here, since `writing` is still true at the exact moment its own
+  // `advance(true)` runs, ahead of the emit that will turn it false.
+  if (!didLog && writing.value) return
+
   if (didLog) logged.value += 1
   step.value += 1
 }
