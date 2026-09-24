@@ -38,20 +38,22 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
                 : 'No data'
             }}
           </span>
-          <button
-            type="button"
-            :aria-label="`Edit ${entry.name}`"
-            @click="editingId = editingId === entry.id ? null : entry.id!"
-          >
-            {{ editingId === entry.id ? 'Close' : 'Edit' }}
-          </button>
-          <button
-            type="button"
-            :aria-label="`Remove ${entry.name}`"
-            @click="emit('remove', entry.id!)"
-          >
-            Remove
-          </button>
+          <span class="actions">
+            <button
+              type="button"
+              :aria-label="`Edit ${entry.name}`"
+              @click="editingId = editingId === entry.id ? null : entry.id!"
+            >
+              {{ editingId === entry.id ? 'Close' : 'Edit' }}
+            </button>
+            <button
+              type="button"
+              :aria-label="`Remove ${entry.name}`"
+              @click="emit('remove', entry.id!)"
+            >
+              Remove
+            </button>
+          </span>
         </div>
 
         <EntryEditor
@@ -99,9 +101,19 @@ li {
 
 .summary {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: var(--space-4);
+}
+
+/* A grid item is min-width: auto, so the name's own longest word set a floor
+   and the row could not shrink below the sum of all five tracks — which
+   widened the whole page rather than clipping (#109, the same fault #102
+   fixed on the log screen). overflow-wrap covers a single word too long for
+   the column on its own, which a phone-length dish name can still manage. */
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .time,
@@ -112,6 +124,45 @@ li {
 
 .kcal {
   text-align: right;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Five tracks need about 430px with their gaps, which a phone does not have:
+   below that the row folds to two, time and kcal sharing the top line as a
+   meta row and the name and actions below it. Measured against this row
+   rather than reused from elsewhere — the same reasoning as MealBuilder's
+   34rem (#102): a breakpoint guessed from a different row is a coincidence,
+   not a fit. */
+@media (max-width: 30rem) {
+  .summary {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      'time kcal'
+      'name name'
+      'actions actions';
+    row-gap: var(--space-2);
+  }
+
+  .time {
+    grid-area: time;
+  }
+
+  .kcal {
+    grid-area: kcal;
+  }
+
+  .name {
+    grid-area: name;
+  }
+
+  .actions {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
 }
 
 button {
