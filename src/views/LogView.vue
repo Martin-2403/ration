@@ -18,6 +18,7 @@ import FoodForm from '../components/FoodForm.vue'
 import FoodPicker from '../components/FoodPicker.vue'
 import MealBuilder from '../components/MealBuilder.vue'
 import MealTemplateForm from '../components/MealTemplateForm.vue'
+import { dayTemplates, mealTemplates } from '../db'
 import { localMiddayFromISODate, toISODate } from '../dates'
 import { cloneDayTemplate, listDayTemplates } from '../day-templates'
 import { useLogStore } from '../stores/log'
@@ -149,6 +150,36 @@ async function savedDay(template: DayTemplate) {
 async function updatedDay() {
   await loadDays()
   choice.value = { kind: 'days' }
+}
+
+/**
+ * Which saved meal or day is armed for removal, if any (#101).
+ *
+ * A second tap rather than an immediate delete, unlike a logged entry's own
+ * Remove: a template can be the only definition a day's slot falls back to,
+ * and deleting one on the first tap gives no chance to see that first.
+ */
+const removingMealId = ref<string | undefined>()
+const removingDayId = ref<string | undefined>()
+
+/**
+ * Saved days that still name a meal, so removing it is a visible choice
+ * rather than a silent one. resolveDayTemplate already reports the gap at
+ * run time (§3) — this says so before the meal is gone, not after.
+ */
+const daysNaming = (mealId: string) =>
+  days.value.filter((template) => template.mealTemplateIds.includes(mealId))
+
+async function removeTemplate(id: string) {
+  await mealTemplates.remove(id)
+  removingMealId.value = undefined
+  await loadTemplates()
+}
+
+async function removeDay(id: string) {
+  await dayTemplates.remove(id)
+  removingDayId.value = undefined
+  await loadDays()
 }
 
 /**
@@ -305,24 +336,68 @@ async function logFood(food: Food, grams: number) {
 
         <ul v-if="choice.kind === 'meals'" class="options">
           <li v-for="match in templates" :key="match.template.id" class="with-aside">
-            <button type="button" @click="choice = { kind: 'template', template: match.template }">
-              {{ match.template.name }}
-              <span class="detail">
-                {{ match.origin === 'seed' ? 'Comes with the app' : 'Yours' }} ·
-                {{ match.template.slots.length }} slot(s)
+            <template v-if="removingMealId !== match.template.id">
+              <button
+                type="button"
+                @click="choice = { kind: 'template', template: match.template }"
+              >
+                {{ match.template.name }}
+                <span class="detail">
+                  {{ match.origin === 'seed' ? 'Comes with the app' : 'Yours' }} ·
+                  {{ match.template.slots.length }} slot(s)
+                </span>
+              </button>
+              <!-- Only what the user owns: a seed is corrected by a release,
+                   and a stored copy of one would be shadowed by it anyway
+                   (§13). -->
+              <template v-if="match.origin === 'stored'">
+                <button
+                  type="button"
+                  class="aside"
+                  :aria-label="`Edit ${match.template.name}`"
+                  @click="choice = { kind: 'meal-form', draft: match.template }"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  class="aside danger"
+                  :aria-label="`Remove ${match.template.name}`"
+                  @click="removingMealId = match.template.id"
+                >
+                  Remove
+                </button>
+              </template>
+            </template>
+            <!-- A second tap, not the first: a template can be the only
+                 definition a day's slot falls back to, and the day names
+                 still using it are worth seeing before it is gone (#101). -->
+            <div v-else class="confirm-remove">
+              <p>
+                Remove {{ match.template.name }}?
+                <template v-if="daysNaming(match.template.id).length > 0">
+                  {{ daysNaming(match.template.id).length }} day(s) still name it —
+                  {{
+                    daysNaming(match.template.id)
+                      .map((day) => day.name)
+                      .join(', ')
+                  }}
+                  — and will show a gap where it was.
+                </template>
+              </p>
+              <span class="confirm-actions">
+                <button type="button" class="ghost small" @click="removingMealId = undefined">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  class="danger small"
+                  @click="removeTemplate(match.template.id)"
+                >
+                  Remove
+                </button>
               </span>
-            </button>
-            <!-- Only what the user owns: a seed is corrected by a release, and
-                 a stored copy of one would be shadowed by it anyway (§13). -->
-            <button
-              v-if="match.origin === 'stored'"
-              type="button"
-              class="aside"
-              :aria-label="`Edit ${match.template.name}`"
-              @click="choice = { kind: 'meal-form', draft: match.template }"
-            >
-              Edit
-            </button>
+            </div>
           </li>
           <li>
             <!-- Beside the meals it makes rather than at the end of the options:
@@ -336,33 +411,57 @@ async function logFood(food: Food, grams: number) {
 
         <ul v-else-if="choice.kind === 'days'" class="options">
           <li v-for="template in days" :key="template.id" class="with-aside">
-            <button type="button" @click="choice = { kind: 'day', template }">
-              {{ template.name }}
-              <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
-            </button>
-            <button
-              type="button"
-              class="aside"
-              :aria-label="`Edit ${template.name}`"
-              @click="choice = { kind: 'day-form', draft: template, existing: true }"
-            >
-              Edit
-            </button>
-            <!-- Beside the day it copies: "like my workday, but" is how the
-                 second one gets made (#52). -->
-            <button
-              type="button"
-              class="aside"
-              :aria-label="`Copy ${template.name}`"
-              @click="
-                choice = {
-                  kind: 'day-form',
-                  draft: cloneDayTemplate(template, `${template.name} (copy)`),
-                }
-              "
-            >
-              Copy
-            </button>
+            <template v-if="removingDayId !== template.id">
+              <button type="button" @click="choice = { kind: 'day', template }">
+                {{ template.name }}
+                <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
+              </button>
+              <button
+                type="button"
+                class="aside"
+                :aria-label="`Edit ${template.name}`"
+                @click="choice = { kind: 'day-form', draft: template, existing: true }"
+              >
+                Edit
+              </button>
+              <!-- Beside the day it copies: "like my workday, but" is how the
+                   second one gets made (#52). -->
+              <button
+                type="button"
+                class="aside"
+                :aria-label="`Copy ${template.name}`"
+                @click="
+                  choice = {
+                    kind: 'day-form',
+                    draft: cloneDayTemplate(template, `${template.name} (copy)`),
+                  }
+                "
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                class="aside danger"
+                :aria-label="`Remove ${template.name}`"
+                @click="removingDayId = template.id"
+              >
+                Remove
+              </button>
+            </template>
+            <div v-else class="confirm-remove">
+              <!-- No day names another day, so nothing else can be orphaned
+                   by this — unlike a meal, which a day can still name
+                   (#101). -->
+              <p>Remove {{ template.name }}? Its meals stay saved on their own.</p>
+              <span class="confirm-actions">
+                <button type="button" class="ghost small" @click="removingDayId = undefined">
+                  Cancel
+                </button>
+                <button type="button" class="danger small" @click="removeDay(template.id)">
+                  Remove
+                </button>
+              </span>
+            </div>
           </li>
           <li>
             <button type="button" @click="choice = { kind: 'day-form' }">
@@ -530,6 +629,89 @@ input:hover {
 .detail {
   font-size: var(--text-caption);
   color: var(--ink-soft);
+}
+
+/* Replaces the row while a removal is armed, at the same width as the row it
+   stands in for — the with-aside buttons it covers are gone, not shrunk. */
+.confirm-remove {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  border: 1px solid var(--status-under);
+  border-radius: var(--radius-control);
+  padding: var(--space-4);
+}
+
+.confirm-remove p {
+  margin: 0;
+  font-size: var(--text-caption);
+  color: var(--ink);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* `.options button` (below) sets a grid display, full width and left-aligned
+   text for the option rows — all wrong for a pair of inline confirm actions,
+   and specific enough (two selectors) to beat .ghost or .danger alone (one
+   class). Qualified by .confirm-actions to win that fight rather than by
+   raising !important. */
+/* Cancel is the first child of .confirm-actions, and `.with-aside
+   button:first-child` above was written for the *option* row's first
+   button — it does not know a button here is not that one, and matched by
+   accident, stretching Cancel to fill the row. flex: none overrides it
+   explicitly rather than trusting which of two equally specific rules the
+   cascade prefers. */
+.confirm-remove .confirm-actions button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+  font: inherit;
+  text-align: center;
+  background: none;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-caption);
+  border-radius: var(--radius-pill);
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+.confirm-remove .confirm-actions .ghost {
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+}
+
+.confirm-remove .confirm-actions .ghost:hover {
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+/* Text carries the meaning, not the colour alone (§15) — this only adds a
+   second signal for the one action here that cannot be undone. */
+.confirm-remove .confirm-actions .danger {
+  color: var(--status-under);
+  border: 1px solid var(--status-under);
+}
+
+.confirm-remove .confirm-actions .danger:hover {
+  color: var(--surface);
+  background: var(--status-under);
+}
+
+/* The row-level Remove action, before anything is armed — same override for
+   the same reason, one class short of what .options .aside needs. */
+.options .aside.danger {
+  color: var(--status-under);
+}
+
+.options .aside.danger:hover {
+  color: var(--surface);
+  background: var(--status-under);
+  border-color: var(--status-under);
 }
 
 .back {
