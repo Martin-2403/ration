@@ -29,6 +29,17 @@ export interface ResolvedDayTemplate {
   missing: string[]
 }
 
+/**
+ * Days that still name a meal, given the days already on hand.
+ *
+ * Takes the list rather than reading the store itself: LogView already holds
+ * one in a ref for the days screen, and re-querying Dexie for something the
+ * caller already has would be a second source of the same truth (#101).
+ */
+export function daysUsingMeal(days: readonly DayTemplate[], mealId: string): DayTemplate[] {
+  return days.filter((day) => day.mealTemplateIds.includes(mealId))
+}
+
 /** Every stored day, alphabetical. */
 export async function listDayTemplates(): Promise<DayTemplate[]> {
   const stored = await dayTemplates.list()

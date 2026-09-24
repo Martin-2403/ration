@@ -354,6 +354,250 @@ describe('LogView', () => {
     expect(days[0]).toMatchObject({ id: 'workday', name: 'Office day' })
   })
 
+  it('requires a second tap before removing a saved meal', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+
+    // A template can be the only definition a day's slot falls back to, so
+    // the first tap only arms it (#101).
+    expect(await db.mealTemplates.count()).toBe(1)
+    expect(wrapper.text()).toContain('Remove Cheese sandwich?')
+
+    await labelled(wrapper, 'Cancel removing Cheese sandwich').trigger('click')
+    expect(optionNamed(wrapper, 'Cheese sandwich')).toBeDefined()
+    expect(await db.mealTemplates.count()).toBe(1)
+  })
+
+  it('removes a saved meal on the second tap', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Cheese sandwich')).toBeUndefined())
+    expect(await db.mealTemplates.count()).toBe(0)
+  })
+
+  it('arms only the row that was tapped, with more than one meal saved', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    await mealTemplates.put({
+      id: 'wrap',
+      name: 'Tortilla wrap',
+      slots: [
+        {
+          id: 'shell',
+          label: 'Shell',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 60,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Tortilla wrap').trigger('click')
+
+    // Two rows can carry the exact same visible "Remove" text; only the
+    // aria-label says which one is armed (#112).
+    expect(wrapper.text()).toContain('Remove Tortilla wrap?')
+    expect(labelled(wrapper, 'Remove Cheese sandwich')).toBeDefined()
+    expect(labelled(wrapper, 'Edit Cheese sandwich')).toBeDefined()
+
+    await labelled(wrapper, 'Cancel removing Tortilla wrap').trigger('click')
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+
+    expect(wrapper.text()).toContain('Remove Cheese sandwich?')
+    expect(labelled(wrapper, 'Remove Tortilla wrap')).toBeDefined()
+  })
+
+  it('does not stay armed after leaving the meals list without cancelling', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+    expect(wrapper.text()).toContain('Remove Cheese sandwich?')
+
+    // Left by the top-level back button, not by this row's own Cancel.
+    await buttonNamed(wrapper, '← Everything else').trigger('click')
+    await openMeals(wrapper)
+
+    // Coming back should show the ordinary row — a tap here landed on
+    // whatever this button now is, not a fresh Remove (#112).
+    expect(wrapper.text()).not.toContain('Remove Cheese sandwich?')
+    expect(labelled(wrapper, 'Remove Cheese sandwich')).toBeDefined()
+  })
+
+  it('clears an armed removal when a different meal is edited and saved', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    await mealTemplates.put({
+      id: 'wrap',
+      name: 'Tortilla wrap',
+      slots: [
+        {
+          id: 'shell',
+          label: 'Shell',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 60,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+
+    // A totally unrelated round trip through the list — edit Tortilla wrap,
+    // save it — used to leave Cheese sandwich armed for whoever came back.
+    await labelled(wrapper, 'Edit Tortilla wrap').trigger('click')
+    await flushPromises()
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Tortilla wrap')).toBeDefined())
+
+    expect(wrapper.text()).not.toContain('Remove Cheese sandwich?')
+  })
+
+  it('names the days that still use a meal before it is removed', async () => {
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge', 'lunch'] })
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
+
+    // resolveDayTemplate already reports this gap at run time (§3); saying it
+    // here means it is seen before the meal is gone, not after.
+    expect(wrapper.text()).toContain('1 day(s) still name it — Workday')
+  })
+
+  it('offers no Edit or Remove on a meal that ships with the app', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+
+    expect(labelled(wrapper, 'Edit Porridge')).toBeUndefined()
+    expect(labelled(wrapper, 'Remove Porridge')).toBeUndefined()
+  })
+
+  it('requires a second tap before removing a saved day', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await labelled(wrapper, 'Remove Workday').trigger('click')
+
+    expect(await db.dayTemplates.count()).toBe(1)
+    expect(wrapper.text()).toContain('Remove Workday?')
+
+    await labelled(wrapper, 'Cancel removing Workday').trigger('click')
+    expect(optionNamed(wrapper, 'Workday')).toBeDefined()
+  })
+
+  it('removes a saved day on the second tap, leaving its meals alone', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await labelled(wrapper, 'Remove Workday').trigger('click')
+    await labelled(wrapper, 'Remove Workday').trigger('click')
+
+    await vi.waitFor(async () => expect(await db.dayTemplates.count()).toBe(0))
+    // A day names meals by id; removing it must not touch what it named.
+    expect(await db.mealTemplates.count()).toBe(0)
+  })
+
+  it('does not stay armed after leaving the days list without cancelling', async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+    await labelled(wrapper, 'Remove Workday').trigger('click')
+    expect(wrapper.text()).toContain('Remove Workday?')
+
+    await buttonNamed(wrapper, '← Everything else').trigger('click')
+    await openDays(wrapper)
+
+    expect(wrapper.text()).not.toContain('Remove Workday?')
+    expect(labelled(wrapper, 'Remove Workday')).toBeDefined()
+  })
+
   it('goes from building a meal straight into logging it', async () => {
     const wrapper = await render()
     await openMeals(wrapper)
