@@ -150,6 +150,40 @@ describe('DayRunner', () => {
     expect(wrapper.emitted('done')).toEqual([[1]])
   })
 
+  it('disables Skip while the meal it would skip is still being written', async () => {
+    const wrapper = await render(day(['porridge']))
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    // Checked before any flush: the write has started, and the button must
+    // already be disabled by the time the click that starts it returns.
+    expect(buttonNamed(wrapper, 'Skip this meal').attributes('disabled')).toBeDefined()
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+    expect(buttonNamed(wrapper, 'Skip this meal')).toBeUndefined()
+  })
+
+  it('still counts a meal whose write finishes after Skip was pressed', async () => {
+    await mealTemplates.put(meal('lunch', 'Cheese sandwich'))
+    const wrapper = await render(day(['porridge', 'lunch']))
+
+    // Log and Skip fired in the same tick, before the write resolves — the
+    // exact race #108 is named for. A disabled button ignores the click, so
+    // this is the same as pressing Skip and finding it did nothing.
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await buttonNamed(wrapper, 'Skip this meal').trigger('click')
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+    await flushPromises()
+
+    // Advanced on the write completing, not on the ignored click — one step,
+    // not two, and the count credits the meal that was actually logged.
+    expect(wrapper.text()).toContain('Meal 2 of 2')
+    expect((await db.logEntries.toArray())[0]!.name).toBe('Porridge')
+
+    await logMeal(wrapper, 2)
+    expect(wrapper.text()).toContain('Logged 2 of 2')
+  })
+
   it('backdates every meal it logs', async () => {
     const eatenAt = Date.parse('2026-09-18T12:00:00Z')
     const wrapper = await render(day(['porridge']), eatenAt)

@@ -30,6 +30,16 @@ const meals = ref<ResolvedMeal[]>([])
 const missing = ref<string[]>([])
 const ready = ref(false)
 
+/**
+ * True while the current meal's write is in flight.
+ *
+ * Skip stays enabled otherwise, and firing it before a write resolves
+ * advances the runner while that write's own `logged` emit is still
+ * pending — an emit from an instance the runner has since keyed away is
+ * never delivered, so the entry lands but nothing counts it (#108).
+ */
+const writing = ref(false)
+
 /** Which meal is on screen. Equal to meals.length once the day is finished. */
 const step = ref(0)
 const logged = ref(0)
@@ -82,10 +92,13 @@ function advance(didLog: boolean) {
           :template="current.template"
           :eaten-at="eatenAt"
           @logged="advance(true)"
+          @busy="writing = $event"
         />
 
         <div class="footer">
-          <button type="button" class="ghost" @click="advance(false)">Skip this meal</button>
+          <button type="button" class="ghost" :disabled="writing" @click="advance(false)">
+            Skip this meal
+          </button>
         </div>
       </template>
     </template>
@@ -175,7 +188,7 @@ button {
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background: var(--primary-strong);
 }
 
@@ -186,9 +199,14 @@ button:hover {
   border: 1px solid var(--line);
 }
 
-.ghost:hover {
+.ghost:hover:not(:disabled) {
   color: var(--ink);
   background: none;
   border-color: var(--ink-soft);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>

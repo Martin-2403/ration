@@ -13,7 +13,18 @@ const { template, eatenAt } = defineProps<{
 }>()
 // Announced rather than assumed: whoever opened the builder decides what a
 // successful log means for the surface around it (#53).
-const emit = defineEmits<{ logged: [] }>()
+const emit = defineEmits<{
+  logged: []
+  /**
+   * Whether a write is in flight. DayRunner needs this to hold its own
+   * "Skip this meal" disabled for the duration — otherwise a skip fired
+   * while this meal's write was still pending advanced the runner before
+   * `logged` arrived, and an emit from an instance the runner has already
+   * keyed away is simply never delivered: the entry lands, but nothing
+   * counts it (#108).
+   */
+  busy: [value: boolean]
+}>()
 
 const store = useLogStore()
 const draft = useMeal(template)
@@ -34,6 +45,7 @@ async function logMeal() {
   if (logging.value) return
 
   logging.value = true
+  emit('busy', true)
 
   try {
     await store.logMeal(draft.toEntry(eatenAt))
@@ -41,6 +53,7 @@ async function logMeal() {
     emit('logged')
   } finally {
     logging.value = false
+    emit('busy', false)
   }
 }
 </script>
