@@ -60,6 +60,46 @@ describe('MealBuilder', () => {
     await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
   })
 
+  it('emits busy around the write, so a host can hold a control disabled for it', async () => {
+    const wrapper = await render()
+
+    const button = wrapper.findAll('button').find((b) => b.text() === 'Log meal')!
+    await button.trigger('click')
+
+    // true fires before the await, synchronously with the click — a host
+    // wiring @busy needs it available on this exact tick, not a later one.
+    expect(wrapper.emitted('busy')?.[0]).toEqual([true])
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+
+    // false is the last thing emitted, after the write and the reset — this
+    // is the guarantee DayRunner's own disabled guard depends on (#108).
+    const busy = wrapper.emitted('busy')!
+    expect(busy[busy.length - 1]).toEqual([false])
+  })
+
+  it('still emits busy: false when the write fails, so nothing stays disabled forever', async () => {
+    const store = useLogStore()
+    vi.spyOn(store, 'logMeal').mockRejectedValue(new Error('write failed'))
+
+    // A custom errorHandler rather than a bare try/catch around the click:
+    // Vue routes an event handler's own rejection through app.config.errorHandler,
+    // not through whatever awaited the trigger — an unhandled one is expected
+    // here, and only the finally block's own guarantee is under test.
+    const wrapper = mount(MealBuilder, {
+      props: { template: porridge },
+      global: { config: { errorHandler: () => {} } },
+    })
+    await flushPromises()
+
+    const button = wrapper.findAll('button').find((b) => b.text() === 'Log meal')!
+    await button.trigger('click')
+    await flushPromises()
+
+    const busy = wrapper.emitted('busy') ?? []
+    expect(busy[busy.length - 1]).toEqual([false])
+  })
+
   it('logs an amount typed with a decimal comma', async () => {
     const wrapper = await render()
     await amountFields(wrapper)[0]!.setValue('12,5')

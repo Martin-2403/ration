@@ -30,6 +30,16 @@ const meals = ref<ResolvedMeal[]>([])
 const missing = ref<string[]>([])
 const ready = ref(false)
 
+/**
+ * True while the current meal's write is in flight.
+ *
+ * Skip stays enabled otherwise, and firing it before a write resolves
+ * advances the runner while that write's own `logged` emit is still
+ * pending — an emit from an instance the runner has since keyed away is
+ * never delivered, so the entry lands but nothing counts it (#108).
+ */
+const writing = ref(false)
+
 /** Which meal is on screen. Equal to meals.length once the day is finished. */
 const step = ref(0)
 const logged = ref(0)
@@ -46,6 +56,16 @@ const current = computed(() => meals.value[step.value])
 const finished = computed(() => ready.value && step.value >= meals.value.length)
 
 function advance(didLog: boolean) {
+  // Belt and braces beside :disabled="writing" on the Skip button: the
+  // attribute only takes effect once Vue paints it, which is a microtask
+  // after the click that sets `writing`, and a script firing two events in
+  // the same turn — not a real tap, which always lands in its own — would
+  // land the second between those two points. A skip while busy is a no-op
+  // rather than the race #108 was named for; a completed log is never
+  // blocked here, since `writing` is still true at the exact moment its own
+  // `advance(true)` runs, ahead of the emit that will turn it false.
+  if (!didLog && writing.value) return
+
   if (didLog) logged.value += 1
   step.value += 1
 }
@@ -82,10 +102,13 @@ function advance(didLog: boolean) {
           :template="current.template"
           :eaten-at="eatenAt"
           @logged="advance(true)"
+          @busy="writing = $event"
         />
 
         <div class="footer">
-          <button type="button" class="ghost" @click="advance(false)">Skip this meal</button>
+          <button type="button" class="ghost" :disabled="writing" @click="advance(false)">
+            Skip this meal
+          </button>
         </div>
       </template>
     </template>
@@ -175,7 +198,7 @@ button {
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-button:hover {
+button:hover:not(:disabled) {
   background: var(--primary-strong);
 }
 
@@ -186,9 +209,14 @@ button:hover {
   border: 1px solid var(--line);
 }
 
-.ghost:hover {
+.ghost:hover:not(:disabled) {
   color: var(--ink);
   background: none;
   border-color: var(--ink-soft);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>

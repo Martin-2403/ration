@@ -13,7 +13,18 @@ const { template, eatenAt } = defineProps<{
 }>()
 // Announced rather than assumed: whoever opened the builder decides what a
 // successful log means for the surface around it (#53).
-const emit = defineEmits<{ logged: [] }>()
+const emit = defineEmits<{
+  logged: []
+  /**
+   * Whether a write is in flight. DayRunner needs this to hold its own
+   * "Skip this meal" disabled for the duration — otherwise a skip fired
+   * while this meal's write was still pending advanced the runner before
+   * `logged` arrived, and an emit from an instance the runner has already
+   * keyed away is simply never delivered: the entry lands, but nothing
+   * counts it (#108).
+   */
+  busy: [value: boolean]
+}>()
 
 const store = useLogStore()
 const draft = useMeal(template)
@@ -30,10 +41,22 @@ const logging = ref(false)
 
 onMounted(draft.load)
 
+/**
+ * `busy` is paired with `logging` by hand at each exit rather than derived
+ * from a `watch` on it — tried, and reverted: `watch`'s callback runs on
+ * Vue's own scheduler, a microtask after the ref changes, and `emit('logged')`
+ * just above already advanced DayRunner's `step` by then, keying this
+ * instance away before that scheduled callback got to run. The deferred
+ * `busy: false` for the meal that just finished was silently dropped, along
+ * with everyone after it — Skip stayed disabled for the rest of the day.
+ * Emitting inline, in the same synchronous stack as the assignment, is what
+ * guarantees delivery before any of that can happen (#108).
+ */
 async function logMeal() {
   if (logging.value) return
 
   logging.value = true
+  emit('busy', true)
 
   try {
     await store.logMeal(draft.toEntry(eatenAt))
@@ -41,6 +64,7 @@ async function logMeal() {
     emit('logged')
   } finally {
     logging.value = false
+    emit('busy', false)
   }
 }
 </script>
