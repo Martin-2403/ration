@@ -52,6 +52,13 @@ const heading = computed(() =>
   padding: var(--space-5) var(--space-4) var(--space-7);
 }
 
+/* A grid item is min-width: auto, so a child wider than its column widens the
+   column instead of shrinking — the log screen's #102, on this screen taken
+   out by a logged entry's row (#109), now folded below 30rem in DayLog.vue. */
+.page > * {
+  min-width: 0;
+}
+
 header {
   display: flex;
   align-items: center;
