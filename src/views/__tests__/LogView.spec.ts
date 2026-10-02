@@ -541,7 +541,11 @@ describe('LogView', () => {
         },
       ],
     })
-    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge', 'lunch'] })
+    await dayTemplates.put({
+      id: 'workday',
+      name: 'Workday',
+      mealTemplateIds: ['porridge', 'lunch'],
+    })
     const wrapper = await render()
     await openMeals(wrapper)
     await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
@@ -606,14 +610,20 @@ describe('LogView', () => {
 
     await wrapper.find('#template-name').setValue('Second breakfast')
     await wrapper.find('#slot-0-label').setValue('Base')
-    await wrapper.findAll('button').find((b) => b.text() === 'Add a food')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Add a food')!
+      .trigger('click')
     await flushPromises()
     await wrapper
       .findAll('.results button')
       .find((b) => b.text().includes('Banana'))!
       .trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Save the meal')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Save the meal')!
+      .trigger('click')
     await flushPromises()
     // Twice: the save awaits the write, and the handler then awaits a re-read
     // of the list before switching the view.
@@ -696,8 +706,13 @@ describe('LogView', () => {
     await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
     const wrapper = await render()
 
-    const label = () => buttonNamed(wrapper, '← Back').text()
-    const back = () => buttonNamed(wrapper, '← Back').trigger('click')
+    // .back, not buttonNamed: buttonNamed matches by exact text, so finding
+    // one and then asserting its own text back would be tautological — it can
+    // only ever equal what was searched for. Selecting by class instead means
+    // a reverted per-destination label fails the assertion cleanly, rather
+    // than surfacing as "no button found" if the text no longer matches.
+    const label = () => wrapper.find('.back').text()
+    const back = () => wrapper.find('.back').trigger('click')
 
     await openMeals(wrapper)
     expect(label()).toBe('← Back')
