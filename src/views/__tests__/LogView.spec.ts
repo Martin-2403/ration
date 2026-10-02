@@ -335,6 +335,18 @@ describe('LogView', () => {
     ])
   })
 
+  it('gives a seed meal a card of its own with no actions in it', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+
+    // A seed is corrected by a release, so it has nothing to edit or remove
+    // (§13) — but it still reads as the same card shape as a stored meal,
+    // not as a bare button, and leaves no empty actions group behind.
+    const card = wrapper.findAll('.row-card').find((row) => row.text().includes('Porridge'))!
+    expect(card.exists()).toBe(true)
+    expect(card.find('.row-actions').exists()).toBe(false)
+  })
+
   it("keeps a day row's own actions inside its card, not beside it", async () => {
     await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
     const wrapper = await render()
