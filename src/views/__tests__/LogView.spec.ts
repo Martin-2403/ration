@@ -474,7 +474,7 @@ describe('LogView', () => {
     expect(wrapper.text()).toContain('Remove Cheese sandwich?')
 
     // Left by the top-level back button, not by this row's own Cancel.
-    await buttonNamed(wrapper, '← Everything else').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
     await openMeals(wrapper)
 
     // Coming back should show the ordinary row — a tap here landed on
@@ -591,7 +591,7 @@ describe('LogView', () => {
     await labelled(wrapper, 'Remove Workday').trigger('click')
     expect(wrapper.text()).toContain('Remove Workday?')
 
-    await buttonNamed(wrapper, '← Everything else').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
     await openDays(wrapper)
 
     expect(wrapper.text()).not.toContain('Remove Workday?')
@@ -674,6 +674,49 @@ describe('LogView', () => {
     expect((wrapper.find('#log-date').element as HTMLInputElement).value).toBe(yesterday())
   })
 
+  it('reads the same at every step, however many destinations it has', async () => {
+    // #118: the label used to name its destination — "Other meals", "Other
+    // days", "Other foods", "Everything else" — four readings of one button
+    // that Martin found harder to parse than it was worth. goBack()'s own
+    // per-step destination is unchanged; only the word on the button is.
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+
+    const label = () => buttonNamed(wrapper, '← Back').text()
+    const back = () => buttonNamed(wrapper, '← Back').trigger('click')
+
+    await openMeals(wrapper)
+    expect(label()).toBe('← Back')
+    await optionNamed(wrapper, 'Porridge').trigger('click')
+    expect(label()).toBe('← Back')
+    await back() // template -> meals
+    await back() // meals -> top level
+
+    await openDays(wrapper)
+    expect(label()).toBe('← Back')
+    await optionNamed(wrapper, 'Workday').trigger('click')
+    expect(label()).toBe('← Back')
+    await back() // day -> days
+    await back() // days -> top level
+
+    await optionNamed(wrapper, 'A food by hand').trigger('click')
+    expect(label()).toBe('← Back')
+  })
+
   it('steps back to the meals rather than out of them', async () => {
     const wrapper = await render()
     await openMeals(wrapper)
@@ -681,7 +724,7 @@ describe('LogView', () => {
 
     // One step out, not two. With the meals behind an entry of their own, a
     // single coarse back button discarded both (#98).
-    await buttonNamed(wrapper, '← Other meals').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
 
     expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
@@ -701,7 +744,7 @@ describe('LogView', () => {
 
     // Picking the wrong source used to mean going out to the options and
     // losing everything typed — there was no step back at all (#95).
-    await buttonNamed(wrapper, '← Other foods').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('#picker-query').exists()).toBe(true)
@@ -711,7 +754,7 @@ describe('LogView', () => {
     const wrapper = await render()
     await optionNamed(wrapper, 'A food by hand').trigger('click')
 
-    await buttonNamed(wrapper, '← Everything else').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
 
     expect(optionNamed(wrapper, 'A meal')).toBeDefined()
     expect(await db.logEntries.count()).toBe(0)
@@ -823,7 +866,7 @@ describe('LogView', () => {
     await optionNamed(wrapper, 'Workday').trigger('click')
     await flushPromises()
 
-    await buttonNamed(wrapper, '← Other days').trigger('click')
+    await buttonNamed(wrapper, '← Back').trigger('click')
 
     // One step out, as everywhere else on this screen (#98, #95).
     expect(optionNamed(wrapper, 'Workday')).toBeDefined()

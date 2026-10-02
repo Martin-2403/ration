@@ -133,7 +133,7 @@ function pick(match: FoodMatch) {
     </template>
 
     <template v-else>
-      <button type="button" class="back" @click="chosen = undefined">← Other foods</button>
+      <button type="button" class="back" @click="chosen = undefined">← Choose a different food</button>
 
       <p class="picked">{{ chosen.food.name }}</p>
 
