@@ -304,6 +304,64 @@ describe('LogView', () => {
     expect(labelled(wrapper, 'Edit Porridge')).toBeUndefined()
   })
 
+  it("keeps a meal row's own actions inside its card, not beside it", async () => {
+    // Regression guard for #121: Edit and Remove used to render as separate
+    // pill buttons next to the row rather than inside it. Both now live in
+    // one .row-actions group within the same .row-card as the row's own
+    // button, so a future change can't silently pull them back out.
+    await mealTemplates.put({
+      id: 'lunch',
+      name: 'Cheese sandwich',
+      slots: [
+        {
+          id: 'bread',
+          label: 'Bread',
+          kind: 'fixed',
+          options: ['oats'],
+          defaultOptionId: 'oats',
+          defaultGrams: 80,
+        },
+      ],
+    })
+    const wrapper = await render()
+    await openMeals(wrapper)
+
+    const card = wrapper.findAll('.row-card').find((row) => row.text().includes('Cheese sandwich'))!
+    const actions = card.find('.row-actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.findAll('button').map((b) => b.attributes('aria-label'))).toEqual([
+      'Edit Cheese sandwich',
+      'Remove Cheese sandwich',
+    ])
+  })
+
+  it('gives a seed meal a card of its own with no actions in it', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+
+    // A seed is corrected by a release, so it has nothing to edit or remove
+    // (§13) — but it still reads as the same card shape as a stored meal,
+    // not as a bare button, and leaves no empty actions group behind.
+    const card = wrapper.findAll('.row-card').find((row) => row.text().includes('Porridge'))!
+    expect(card.exists()).toBe(true)
+    expect(card.find('.row-actions').exists()).toBe(false)
+  })
+
+  it("keeps a day row's own actions inside its card, not beside it", async () => {
+    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+    const wrapper = await render()
+    await openDays(wrapper)
+
+    const card = wrapper.findAll('.row-card').find((row) => row.text().includes('Workday'))!
+    const actions = card.find('.row-actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.findAll('button').map((b) => b.attributes('aria-label'))).toEqual([
+      'Edit Workday',
+      'Copy Workday',
+      'Remove Workday',
+    ])
+  })
+
   it('corrects a saved meal in place and lands back on the meals', async () => {
     await mealTemplates.put({
       id: 'lunch',
@@ -541,7 +599,11 @@ describe('LogView', () => {
         },
       ],
     })
-    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge', 'lunch'] })
+    await dayTemplates.put({
+      id: 'workday',
+      name: 'Workday',
+      mealTemplateIds: ['porridge', 'lunch'],
+    })
     const wrapper = await render()
     await openMeals(wrapper)
     await labelled(wrapper, 'Remove Cheese sandwich').trigger('click')
@@ -606,14 +668,20 @@ describe('LogView', () => {
 
     await wrapper.find('#template-name').setValue('Second breakfast')
     await wrapper.find('#slot-0-label').setValue('Base')
-    await wrapper.findAll('button').find((b) => b.text() === 'Add a food')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Add a food')!
+      .trigger('click')
     await flushPromises()
     await wrapper
       .findAll('.results button')
       .find((b) => b.text().includes('Banana'))!
       .trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Save the meal')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Save the meal')!
+      .trigger('click')
     await flushPromises()
     // Twice: the save awaits the write, and the handler then awaits a re-read
     // of the list before switching the view.

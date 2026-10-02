@@ -10,6 +10,7 @@
  * summary screen happened to be showing, which meant viewing the 27th and
  * logging wrote the entry against today without saying so (#61).
  */
+import { Copy, Pencil, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import DayRunner from '../components/DayRunner.vue'
@@ -313,7 +314,7 @@ async function logFood(food: Food, grams: number) {
           <!-- Above the meals because a day is made of them, and because
                reaching for the whole day is the shortcut worth finding
                first (#52). -->
-          <button type="button" @click="choice = { kind: 'days' }">
+          <button type="button" class="option-link" @click="choice = { kind: 'days' }">
             A usual day
             <span class="detail">{{ daysSummary }}</span>
           </button>
@@ -323,7 +324,7 @@ async function logFood(food: Food, grams: number) {
                rest of this list is verbs, and the templates grow without limit
                while the actions do not — at a dozen saved meals they pushed
                every action off the screen (#98). -->
-          <button type="button" @click="choice = { kind: 'meals' }">
+          <button type="button" class="option-link" @click="choice = { kind: 'meals' }">
             A meal
             <span class="detail">{{ mealsSummary }}</span>
           </button>
@@ -331,19 +332,19 @@ async function logFood(food: Food, grams: number) {
         <li>
           <!-- Above hand entry on purpose: reaching for the form first is what
                fills the cache with copies of the same apple (#40). -->
-          <button type="button" @click="choice = { kind: 'stored' }">
+          <button type="button" class="option-link" @click="choice = { kind: 'stored' }">
             A food you have already
             <span class="detail">Search what is saved</span>
           </button>
         </li>
         <li>
-          <button type="button" @click="choice = { kind: 'variation' }">
+          <button type="button" class="option-link" @click="choice = { kind: 'variation' }">
             A variation of a food
             <span class="detail">Copy one and change what differs</span>
           </button>
         </li>
         <li>
-          <button type="button" @click="choice = { kind: 'food' }">
+          <button type="button" class="option-link" @click="choice = { kind: 'food' }">
             A food by hand
             <span class="detail">Type in the values yourself</span>
           </button>
@@ -354,10 +355,11 @@ async function logFood(food: Food, grams: number) {
         <button type="button" class="back" @click="goBack">{{ backLabel }}</button>
 
         <ul v-if="choice.kind === 'meals'" class="options">
-          <li v-for="match in templates" :key="match.template.id" class="with-aside">
-            <template v-if="removingMealId !== match.template.id">
+          <li v-for="match in templates" :key="match.template.id">
+            <div v-if="removingMealId !== match.template.id" class="row-card">
               <button
                 type="button"
+                class="row-main"
                 @click="choice = { kind: 'template', template: match.template }"
               >
                 {{ match.template.name }}
@@ -369,25 +371,27 @@ async function logFood(food: Food, grams: number) {
               <!-- Only what the user owns: a seed is corrected by a release,
                    and a stored copy of one would be shadowed by it anyway
                    (§13). -->
-              <template v-if="match.origin === 'stored'">
+              <span v-if="match.origin === 'stored'" class="row-actions">
                 <button
                   type="button"
-                  class="aside"
+                  class="icon-action"
+                  title="Edit"
                   :aria-label="`Edit ${match.template.name}`"
                   @click="choice = { kind: 'meal-form', draft: match.template }"
                 >
-                  Edit
+                  <Pencil :size="20" :stroke-width="1.5" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
-                  class="aside danger"
+                  class="icon-action danger"
+                  title="Remove"
                   :aria-label="`Remove ${match.template.name}`"
                   @click="removingMealId = match.template.id"
                 >
-                  Remove
+                  <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
                 </button>
-              </template>
-            </template>
+              </span>
+            </div>
             <!-- A second tap, not the first: a template can be the only
                  definition a day's slot falls back to, and the day names
                  still using it are worth seeing before it is gone (#101). -->
@@ -434,7 +438,7 @@ async function logFood(food: Food, grams: number) {
           <li>
             <!-- Beside the meals it makes rather than at the end of the options:
                  noticing a meal is missing happens while looking for it (#96). -->
-            <button type="button" @click="choice = { kind: 'meal-form' }">
+            <button type="button" class="option-link" @click="choice = { kind: 'meal-form' }">
               Build a meal
               <span class="detail">Save a set of slots to log again later</span>
             </button>
@@ -442,44 +446,49 @@ async function logFood(food: Food, grams: number) {
         </ul>
 
         <ul v-else-if="choice.kind === 'days'" class="options">
-          <li v-for="template in days" :key="template.id" class="with-aside">
-            <template v-if="removingDayId !== template.id">
-              <button type="button" @click="choice = { kind: 'day', template }">
+          <li v-for="template in days" :key="template.id">
+            <div v-if="removingDayId !== template.id" class="row-card">
+              <button type="button" class="row-main" @click="choice = { kind: 'day', template }">
                 {{ template.name }}
                 <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
               </button>
-              <button
-                type="button"
-                class="aside"
-                :aria-label="`Edit ${template.name}`"
-                @click="choice = { kind: 'day-form', draft: template, existing: true }"
-              >
-                Edit
-              </button>
-              <!-- Beside the day it copies: "like my workday, but" is how the
-                   second one gets made (#52). -->
-              <button
-                type="button"
-                class="aside"
-                :aria-label="`Copy ${template.name}`"
-                @click="
-                  choice = {
-                    kind: 'day-form',
-                    draft: cloneDayTemplate(template, `${template.name} (copy)`),
-                  }
-                "
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                class="aside danger"
-                :aria-label="`Remove ${template.name}`"
-                @click="removingDayId = template.id"
-              >
-                Remove
-              </button>
-            </template>
+              <span class="row-actions">
+                <button
+                  type="button"
+                  class="icon-action"
+                  title="Edit"
+                  :aria-label="`Edit ${template.name}`"
+                  @click="choice = { kind: 'day-form', draft: template, existing: true }"
+                >
+                  <Pencil :size="20" :stroke-width="1.5" aria-hidden="true" />
+                </button>
+                <!-- Beside the day it copies: "like my workday, but" is how the
+                     second one gets made (#52). -->
+                <button
+                  type="button"
+                  class="icon-action"
+                  title="Copy"
+                  :aria-label="`Copy ${template.name}`"
+                  @click="
+                    choice = {
+                      kind: 'day-form',
+                      draft: cloneDayTemplate(template, `${template.name} (copy)`),
+                    }
+                  "
+                >
+                  <Copy :size="20" :stroke-width="1.5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  class="icon-action danger"
+                  title="Remove"
+                  :aria-label="`Remove ${template.name}`"
+                  @click="removingDayId = template.id"
+                >
+                  <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
+                </button>
+              </span>
+            </div>
             <div v-else class="confirm-remove">
               <!-- No day names another day, so nothing else can be orphaned
                    by this — unlike a meal, which a day can still name
@@ -506,7 +515,7 @@ async function logFood(food: Food, grams: number) {
             </div>
           </li>
           <li>
-            <button type="button" @click="choice = { kind: 'day-form' }">
+            <button type="button" class="option-link" @click="choice = { kind: 'day-form' }">
               Build a day
               <span class="detail">Put your meals in the order you eat them</span>
             </button>
@@ -626,7 +635,13 @@ input:hover {
   list-style: none;
 }
 
-.options button {
+/* Scoped to its own class rather than every button under .options: that
+   used to be "every button", which meant row-main and icon-action below
+   each had to fight free of a grid/width/border/background meant for a
+   plain option row, not for a button sharing a card with other controls.
+   The five top-level choices and the two "Build a ..." rows are the only
+   buttons actually shaped like this. */
+.options .option-link {
   display: grid;
   gap: var(--space-1);
   width: 100%;
@@ -641,31 +656,86 @@ input:hover {
   transition: border-color var(--motion-fast) var(--ease-out);
 }
 
-.options button:hover {
+.options .option-link:hover {
   border-color: var(--primary);
 }
 
-/* A row that carries a second action beside its main one. */
-.with-aside {
+/* A row that carries one or more icon actions beside its main button, both
+   inside the same bordered card rather than as separate boxes beside it
+   (#121) — the border moves here, off the row's own buttons. */
+.row-card {
   display: flex;
   align-items: stretch;
-  gap: var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
-.with-aside button:first-child {
+.row-card:hover {
+  border-color: var(--primary);
+}
+
+.row-main {
+  display: grid;
+  gap: var(--space-1);
   flex: 1;
   min-width: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: none;
+  padding: var(--space-4);
+  cursor: pointer;
 }
 
-.options .aside {
-  /* Flex, not the grid .options button uses: the label is alone here and
-     belongs in the middle of a row as tall as the one beside it. */
+.row-actions {
   display: flex;
   align-items: center;
-  width: auto;
-  font-size: var(--text-caption);
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border-left: 1px solid var(--line);
+}
+
+/* Icon only, with the accessible name on the button itself and the icon
+   decorative — same split AppNav's own tab icons already use. title is the
+   tooltip: this is a touch-first app, so hover is a desktop bonus rather than
+   the primary way anyone finds out what the icon means.
+
+   44px, not a smaller icon-sized box: AppNav's own tab links document 2.75rem
+   as the touch-target floor, and three of these sit 4px apart in a row —
+   tight enough that undercutting it invites mis-taps between Edit and
+   Remove specifically. Measured, not assumed: the first pass here was a bare
+   36px before this was checked against that floor. */
+.icon-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
   color: var(--ink-soft);
-  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out);
+}
+
+.icon-action:hover {
+  color: var(--ink);
+  background: var(--primary-tint);
+}
+
+/* Text would carry this alone elsewhere (§15), but Remove already names
+   itself through its own confirm step — the colour here is a second signal
+   on top of that step, not the only one. */
+.icon-action.danger:hover {
+  color: var(--surface);
+  background: var(--status-under);
 }
 
 .detail {
@@ -673,8 +743,8 @@ input:hover {
   color: var(--ink-soft);
 }
 
-/* Replaces the row while a removal is armed, at the same width as the row it
-   stands in for — the with-aside buttons it covers are gone, not shrunk. */
+/* Replaces the row-card while a removal is armed, at the same width as the
+   row it stands in for — the row's own icon actions are gone, not shrunk. */
 .confirm-remove {
   display: grid;
   gap: var(--space-3);
@@ -696,17 +766,10 @@ input:hover {
   gap: var(--space-2);
 }
 
-/* `.options button` (below) sets a grid display, full width and left-aligned
-   text for the option rows — all wrong for a pair of inline confirm actions,
-   and specific enough (two selectors) to beat .ghost or .danger alone (one
-   class). Qualified by .confirm-actions to win that fight rather than by
-   raising !important. */
-/* Cancel is the first child of .confirm-actions, and `.with-aside
-   button:first-child` above was written for the *option* row's first
-   button — it does not know a button here is not that one, and matched by
-   accident, stretching Cancel to fill the row. flex: none overrides it
-   explicitly rather than trusting which of two equally specific rules the
-   cascade prefers. */
+/* The confirm panel's own look: inline, centred, pill-shaped — nothing here
+   escapes a competing rule, since no other .options selector reaches a plain
+   button inside .confirm-remove. flex: none is still needed in its own
+   right, for .confirm-actions' flex layout, not as an override of anything. */
 .confirm-remove .confirm-actions button {
   display: inline-flex;
   flex: none;
@@ -742,18 +805,6 @@ input:hover {
 .confirm-remove .confirm-actions .danger:hover {
   color: var(--surface);
   background: var(--status-under);
-}
-
-/* The row-level Remove action, before anything is armed — same override for
-   the same reason, one class short of what .options .aside needs. */
-.options .aside.danger {
-  color: var(--status-under);
-}
-
-.options .aside.danger:hover {
-  color: var(--surface);
-  background: var(--status-under);
-  border-color: var(--status-under);
 }
 
 .back {
