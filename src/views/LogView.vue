@@ -242,16 +242,6 @@ const daysSummary = computed(() =>
     : summarise(days.value.map((template) => template.name)),
 )
 
-const backLabel = computed(() => {
-  const current = choice.value
-
-  if (current?.kind === 'template' || current?.kind === 'meal-form') return '← Other meals'
-  if (current?.kind === 'day' || current?.kind === 'day-form') return '← Other days'
-  if (current?.kind === 'variation' && current.source) return '← Other foods'
-
-  return '← Everything else'
-})
-
 /**
  * True while an entry is being written.
  *
@@ -351,7 +341,7 @@ async function logFood(food: Food, grams: number) {
       </ul>
 
       <template v-else>
-        <button type="button" class="back" @click="goBack">{{ backLabel }}</button>
+        <button type="button" class="back" @click="goBack">← Back</button>
 
         <ul v-if="choice.kind === 'meals'" class="options">
           <li v-for="match in templates" :key="match.template.id" class="with-aside">
