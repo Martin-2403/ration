@@ -73,7 +73,8 @@ Verify a green run against the head SHA you actually pushed, not the branch name
   not.
 - Commit subjects and PR titles describe the durable change, from a developer's point
   of view: no WIP or review-time state, no AI attribution, and not addressed to the
-  reviewer.
+  reviewer. No passages like: "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+  as the whole project will be disclaimed as AI assisted coding
 - **The commit body carries the why** (§19). **The PR body stays short** — what the
   change does and what was measured, in the third person. It does not flag what
   deserves attention, narrate who did what, offer the reviewer options, or recap the
