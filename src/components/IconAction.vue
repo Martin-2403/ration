@@ -42,9 +42,8 @@ defineProps<{ danger?: boolean }>()
   background: var(--primary-tint);
 }
 
-/* Text would carry this alone elsewhere (§15), but Remove already names
-   itself through its own confirm step, so the colour is a second signal on
-   top of that, not the only one. */
+/* Colour is a second signal, never the only one (§15): the aria-label and
+   tooltip name the action, and some callers add a confirm step on top. */
 .icon-action.danger:hover {
   color: var(--surface);
   background: var(--status-under);

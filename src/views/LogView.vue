@@ -638,8 +638,8 @@ input:hover {
 }
 
 /* Scoped to its own class rather than every button under .options: that
-   used to be "every button", which meant row-main and icon-action below
-   each had to fight free of a grid/width/border/background meant for a
+   used to be "every button", which meant row-main below and
+   IconAction each had to fight free of a grid/width/border/background meant for a
    plain option row, not for a button sharing a card with other controls.
    The five top-level choices and the two "Build a ..." rows are the only
    buttons actually shaped like this. */
@@ -692,6 +692,7 @@ input:hover {
   cursor: pointer;
 }
 
+/* The 44px buttons in here come from IconAction. */
 .row-actions {
   display: flex;
   align-items: center;
