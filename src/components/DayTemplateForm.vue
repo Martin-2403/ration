@@ -20,10 +20,9 @@ import { computed, onMounted, ref } from 'vue'
 
 import { dayTemplates, mealTemplates } from '../db'
 import { moveMeal, wrapSingleFood } from '../day-templates'
-import { parseAmount } from '../parse-amount'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
 import type { DayTemplate, Food, MealTemplate } from '../types'
-import FoodPicker from './FoodPicker.vue'
+import SingleFoodStep from './SingleFoodStep.vue'
 
 const { draft, existing } = defineProps<{
   /** A saved day to correct, a clone to start from, or nothing at all. */
@@ -74,26 +73,10 @@ onMounted(async () => {
 /** One-slot meals made here and not yet stored; see the header. */
 const created = ref<MealTemplate[]>([])
 
-/** The single-food flow: choosing the food, then its amount. Absent when not adding one. */
-const single = ref<{ food?: Food; grams: string } | undefined>(undefined)
+/** True while the single-food step stands in for the form. */
+const addingSingle = ref(false)
 
-const singleAmount = computed(() => parseAmount(single.value?.grams ?? ''))
-/** Zero is a number but not an amount of food, so it is refused apart from "not a number". */
-const singleGrams = computed(() =>
-  singleAmount.value.kind === 'number' && singleAmount.value.value > 0
-    ? singleAmount.value.value
-    : undefined,
-)
-
-function pickSingle(food: Food) {
-  single.value = { food, grams: '100' }
-}
-
-function addSingle() {
-  const food = single.value?.food
-  const grams = singleGrams.value
-  if (!food || grams === undefined) return
-
+function addSingle(food: Food, grams: number) {
   const meal = wrapSingleFood(food, grams, [
     ...available.value.map((match) => match.template),
     ...created.value,
@@ -106,7 +89,7 @@ function addSingle() {
   if (!known) created.value.push(meal)
 
   meals.value.push(meal.id)
-  single.value = undefined
+  addingSingle.value = false
 }
 
 const names = computed(
@@ -173,119 +156,82 @@ async function save() {
 </script>
 
 <template>
-  <section class="card">
-    <template v-if="single">
-      <button type="button" class="back" @click="single = undefined">← Back to the day</button>
+  <SingleFoodStep v-if="addingSingle" @add="addSingle" @back="addingSingle = false" />
 
-      <FoodPicker v-if="!single.food" purpose="choose" @select="pickSingle" />
+  <section v-else class="card">
+    <p class="hint">
+      A day is the meals you normally eat together. Running it walks each one through the usual
+      builder, so the amounts are still yours to confirm.
+    </p>
 
-      <template v-else>
-        <p class="hint">How much {{ single.food.name }} does this day usually have?</p>
+    <div class="row">
+      <label for="day-name">Name</label>
+      <input id="day-name" v-model="name" type="text" autocomplete="off" placeholder="Workday" />
+    </div>
 
-        <div class="row">
-          <label for="single-grams">Usually</label>
-          <span class="amount">
-            <input
-              id="single-grams"
-              v-model="single.grams"
-              type="text"
-              inputmode="decimal"
-              autocomplete="off"
-              :aria-invalid="singleGrams === undefined || undefined"
-            />
-            g
-          </span>
-        </div>
+    <ol v-if="meals.length > 0" class="meals">
+      <li v-for="(id, index) in meals" :key="`${id}-${index}`">
+        <span class="meal-name">{{ mealName(id) }}</span>
 
-        <div class="footer">
-          <p v-if="singleGrams === undefined" class="problem" role="status">
-            Give an amount above zero.
-          </p>
-          <button type="button" class="ghost" @click="single.food = undefined">Change food</button>
-          <button type="button" :disabled="singleGrams === undefined" @click="addSingle">
-            Add to the day
+        <span class="meal-actions">
+          <button
+            type="button"
+            class="ghost small"
+            :disabled="index === 0"
+            :aria-label="`Move ${mealName(id)} earlier`"
+            @click="meals = moveMeal(meals, index, index - 1)"
+          >
+            ↑
           </button>
-        </div>
-      </template>
-    </template>
-
-    <template v-else>
-      <p class="hint">
-        A day is the meals you normally eat together. Running it walks each one through the usual
-        builder, so the amounts are still yours to confirm.
-      </p>
-
-      <div class="row">
-        <label for="day-name">Name</label>
-        <input id="day-name" v-model="name" type="text" autocomplete="off" placeholder="Workday" />
-      </div>
-
-      <ol v-if="meals.length > 0" class="meals">
-        <li v-for="(id, index) in meals" :key="`${id}-${index}`">
-          <span class="meal-name">{{ mealName(id) }}</span>
-
-          <span class="meal-actions">
-            <button
-              type="button"
-              class="ghost small"
-              :disabled="index === 0"
-              :aria-label="`Move ${mealName(id)} earlier`"
-              @click="meals = moveMeal(meals, index, index - 1)"
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              class="ghost small"
-              :disabled="index === meals.length - 1"
-              :aria-label="`Move ${mealName(id)} later`"
-              @click="meals = moveMeal(meals, index, index + 1)"
-            >
-              ↓
-            </button>
-            <button
-              type="button"
-              class="ghost small"
-              :aria-label="`Remove ${mealName(id)}`"
-              @click="meals.splice(index, 1)"
-            >
-              Remove
-            </button>
-          </span>
-        </li>
-      </ol>
-
-      <div class="row">
-        <label for="day-add-meal">Add</label>
-        <span class="adding">
-          <select id="day-add-meal" v-model="adding">
-            <option v-for="match in available" :key="match.template.id" :value="match.template.id">
-              {{ match.template.name }}
-            </option>
-          </select>
-          <button type="button" class="ghost small" :disabled="!adding" @click="add">
-            Add meal
+          <button
+            type="button"
+            class="ghost small"
+            :disabled="index === meals.length - 1"
+            :aria-label="`Move ${mealName(id)} later`"
+            @click="meals = moveMeal(meals, index, index + 1)"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            class="ghost small"
+            :aria-label="`Remove ${mealName(id)}`"
+            @click="meals.splice(index, 1)"
+          >
+            Remove
           </button>
         </span>
-      </div>
+      </li>
+    </ol>
 
-      <div class="row">
-        <span />
-        <button type="button" class="ghost small single" @click="single = { grams: '100' }">
-          Add a single food
-        </button>
-      </div>
+    <div class="row">
+      <label for="day-add-meal">Add</label>
+      <span class="adding">
+        <select id="day-add-meal" v-model="adding">
+          <option v-for="match in available" :key="match.template.id" :value="match.template.id">
+            {{ match.template.name }}
+          </option>
+        </select>
+        <button type="button" class="ghost small" :disabled="!adding" @click="add">Add meal</button>
+      </span>
+    </div>
 
-      <div class="footer">
-        <!-- A blocked save always names what is missing. -->
-        <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
+    <div class="row">
+      <span />
+      <button type="button" class="ghost small single" @click="addingSingle = true">
+        Add a single food
+      </button>
+    </div>
 
-        <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
-        <button type="button" :disabled="!canSave" @click="save">
-          {{ existing ? 'Save the changes' : 'Save the day' }}
-        </button>
-      </div>
-    </template>
+    <div class="footer">
+      <!-- A blocked save always names what is missing. -->
+      <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
+
+      <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
+      <button type="button" :disabled="!canSave" @click="save">
+        {{ existing ? 'Save the changes' : 'Save the day' }}
+      </button>
+    </div>
   </section>
 </template>
 
@@ -427,38 +373,8 @@ button:disabled {
   border-color: var(--ink-soft);
 }
 
-.amount {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--ink-soft);
-}
-
-.amount input {
-  width: 5rem;
-  text-align: right;
-  font-feature-settings: var(--figures-tabular);
-}
-
-input[aria-invalid='true'] {
-  border-color: var(--status-under);
-}
-
 .single {
   justify-self: start;
-}
-
-.back {
-  justify-self: start;
-  color: var(--ink-soft);
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-.back:hover:not(:disabled) {
-  color: var(--ink);
-  background: none;
 }
 
 .small {
