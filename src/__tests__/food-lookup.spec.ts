@@ -6,9 +6,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { SEED_FOODS } from '../data/foods'
 import { db, foods } from '../db'
 import { searchFoods } from '../food-lookup'
-import type { Food } from '../types'
+import type { NewFood } from '../types'
 
-const stored = (id: string, name: string): Food => ({
+const stored = (id: string, name: string): NewFood => ({
   id,
   name,
   per100g: { energy: { value: 100, source: 'user' } },

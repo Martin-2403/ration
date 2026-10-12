@@ -11,7 +11,11 @@ export interface Food {
   per100g: NutrientMap // provenance per nutrient (§3)
   barcode?: string
   servingWeight?: number // grams, for per-serving sources
+  updatedAt: number // write time, stamped by the repository; §10 merge is last-write-wins on this
 }
+
+/** A food before it is stored: the repository assigns updatedAt. */
+export type NewFood = Omit<Food, 'updatedAt'>
 
 export interface MealSlot {
   id: string // stable; LogItem references this, never the label
@@ -26,7 +30,11 @@ export interface MealTemplate {
   id: string
   name: string
   slots: MealSlot[]
+  updatedAt: number // write time, stamped by the repository; §10 merge is last-write-wins on this
 }
+
+/** A meal template before it is stored: the repository assigns updatedAt. */
+export type NewMealTemplate = Omit<MealTemplate, 'updatedAt'>
 
 /**
  * An ordered set of meals that normally go together — "a workday" (#52).
@@ -41,7 +49,11 @@ export interface DayTemplate {
   name: string
   /** Meal template ids, in the order they are eaten. Repeats are allowed. */
   mealTemplateIds: string[]
+  updatedAt: number // write time, stamped by the repository; §10 merge is last-write-wins on this
 }
+
+/** A day template before it is stored: the repository assigns updatedAt. */
+export type NewDayTemplate = Omit<DayTemplate, 'updatedAt'>
 
 // Food by mass or supplement by dose. One union keeps §8's single summing path
 // true: nutrientsFor() resolves the quantity at the leaf.

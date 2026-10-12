@@ -141,6 +141,19 @@ describe('log store', () => {
     expect((await foods.get('apple'))?.name).toBe('Apple')
   })
 
+  it('does not bump updatedAt when an unchanged stored food is logged', async () => {
+    const store = useLogStore()
+    const apple = { id: 'apple', name: 'Apple', per100g: {} }
+
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    await store.logFood(apple, 100)
+    spy.mockReturnValue(2000)
+    await store.logFood(apple, 150)
+
+    expect((await foods.get('apple'))?.updatedAt).toBe(1000)
+    spy.mockRestore()
+  })
+
   it('re-snapshots totals from the items when an entry is revised', async () => {
     const store = useLogStore()
     // logFood upserts the food, so the values have to come in through it —

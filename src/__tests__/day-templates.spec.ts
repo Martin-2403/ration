@@ -13,15 +13,19 @@ import {
   wrapSingleFood,
 } from '../day-templates'
 import { db, dayTemplates, mealTemplates } from '../db'
-import type { DayTemplate, MealTemplate } from '../types'
+import type { NewDayTemplate, NewMealTemplate } from '../types'
 
-const day = (id: string, name: string, mealTemplateIds: string[] = ['porridge']): DayTemplate => ({
+const day = (
+  id: string,
+  name: string,
+  mealTemplateIds: string[] = ['porridge'],
+): NewDayTemplate => ({
   id,
   name,
   mealTemplateIds,
 })
 
-const meal = (id: string, name: string): MealTemplate => ({
+const meal = (id: string, name: string): NewMealTemplate => ({
   id,
   name,
   slots: [
@@ -208,9 +212,9 @@ describe('wrapSingleFood', () => {
   })
 
   it.each([
-    ['another amount', (m: MealTemplate) => m, 60],
-    ['a renamed meal', (m: MealTemplate) => ({ ...m, name: 'Snack' }), 120],
-    ['an added slot', (m: MealTemplate) => ({ ...m, slots: [...m.slots, ...m.slots] }), 120],
+    ['another amount', (m: NewMealTemplate) => m, 60],
+    ['a renamed meal', (m: NewMealTemplate) => ({ ...m, name: 'Snack' }), 120],
+    ['an added slot', (m: NewMealTemplate) => ({ ...m, slots: [...m.slots, ...m.slots] }), 120],
   ])('does not reuse %s', (_case, change, grams) => {
     const first = wrapSingleFood(banana, 120, [])
 
@@ -224,6 +228,6 @@ describe('wrapSingleFood', () => {
     const resolved = await resolveDayTemplate(day('d', 'Snacks', [wrapped.id]))
 
     expect(resolved.missing).toEqual([])
-    expect(resolved.meals[0]!.template).toEqual(wrapped)
+    expect(resolved.meals[0]!.template).toMatchObject(wrapped)
   })
 })

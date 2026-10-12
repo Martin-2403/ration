@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import { DECLARATION_NUTRIENTS } from '../../data/nutrients'
-import type { Food } from '../../types'
+import type { NewFood } from '../../types'
 import FoodForm from '../FoodForm.vue'
 
 const fill = async (
@@ -224,7 +224,7 @@ describe('FoodForm', () => {
  * hands back the right id.
  */
 describe('FoodForm, started from a food', () => {
-  const source: Food = {
+  const source: NewFood = {
     id: 'yoghurt',
     name: 'Yoghurt, 3.5%',
     per100g: {
@@ -268,7 +268,7 @@ describe('FoodForm, started from a food', () => {
     await wrapper.find('#food-grams').setValue('150')
     await wrapper.find('form').trigger('submit')
 
-    const [food] = wrapper.emitted('submit')![0] as [Food, number]
+    const [food] = wrapper.emitted('submit')![0] as [NewFood, number]
     expect(food.id).not.toBe('yoghurt')
     expect(food.name).toBe('Yoghurt, 0.1%')
     // The edited figure is the user's; the untouched one keeps the label's.
@@ -282,7 +282,7 @@ describe('FoodForm, started from a food', () => {
     await wrapper.find('#food-grams').setValue('150')
     await wrapper.find('button.ghost').trigger('click')
 
-    const [food] = wrapper.emitted('submit')![0] as [Food, number]
+    const [food] = wrapper.emitted('submit')![0] as [NewFood, number]
     expect(food.id).toBe('yoghurt')
     expect(food.per100g.energy).toEqual({ value: 70, source: 'user' })
   })

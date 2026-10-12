@@ -755,8 +755,9 @@ describe('LogView', () => {
       .find((b) => b.text() === 'Save the meal')!
       .trigger('click')
     await flushPromises()
-    // Twice: the save awaits the write, and the handler then awaits a re-read
+    // Thrice: the save reads the stored row, then writes, and the handler then awaits a re-read
     // of the list before switching the view.
+    await flushPromises()
     await flushPromises()
 
     // Someone describing a meal is describing it because they are eating it;
@@ -974,8 +975,9 @@ describe('LogView', () => {
     await buttonNamed(wrapper, 'Add meal').trigger('click')
     await buttonNamed(wrapper, 'Save the day').trigger('click')
     await flushPromises()
-    // Twice: the save awaits the write, and the handler then awaits a re-read
+    // Thrice: the save reads the stored row, then writes, and the handler then awaits a re-read
     // of the list before switching the view.
+    await flushPromises()
     await flushPromises()
 
     expect(await db.dayTemplates.count()).toBe(1)

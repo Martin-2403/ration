@@ -15,11 +15,11 @@
 import { computed, onMounted, ref } from 'vue'
 
 import { resolveDayTemplate, type ResolvedMeal } from '../day-templates'
-import type { DayTemplate } from '../types'
+import type { NewDayTemplate } from '../types'
 import MealBuilder from './MealBuilder.vue'
 
 const { template, eatenAt } = defineProps<{
-  template: DayTemplate
+  template: NewDayTemplate
   /** When the meals were eaten. Undefined means each is stamped as it is logged. */
   eatenAt?: number
 }>()

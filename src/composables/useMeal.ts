@@ -10,7 +10,7 @@ import type { NutrientMap, NutrientTotals } from '../data/nutrients'
 import { findFoods } from '../food-lookup'
 import { parseAmount, type ParsedAmount } from '../parse-amount'
 import { nutrientsFor, sumTotals } from '../totals'
-import type { Food, LogItem, MealTemplate, NewLogEntry } from '../types'
+import type { Food, LogItem, NewLogEntry, NewMealTemplate } from '../types'
 
 /** One slot as the user is currently editing it. */
 export interface DraftSlot {
@@ -54,7 +54,7 @@ function usableAmount(parsed: ParsedAmount | undefined): number | undefined {
   return parsed?.kind === 'number' && parsed.value > 0 ? parsed.value : undefined
 }
 
-export function useMeal(template: MealTemplate): MealDraft {
+export function useMeal(template: NewMealTemplate): MealDraft {
   const initial = () =>
     template.slots.map((slot) => ({
       slotId: slot.id,

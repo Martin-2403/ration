@@ -5,10 +5,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { db, foods } from '../../db'
-import type { Food } from '../../types'
+import type { NewFood } from '../../types'
 import FoodPicker from '../FoodPicker.vue'
 
-const stored = (id: string, name: string, per100g: Food['per100g']): Food => ({
+const stored = (id: string, name: string, per100g: NewFood['per100g']): NewFood => ({
   id,
   name,
   per100g,
@@ -61,7 +61,7 @@ describe('FoodPicker', () => {
     await wrapper.find('#picker-grams').setValue('150')
     await wrapper.find('button.primary').trigger('click')
 
-    const [food, grams] = wrapper.emitted('submit')![0] as [Food, number]
+    const [food, grams] = wrapper.emitted('submit')![0] as [NewFood, number]
     expect(food.id).toBe('apple')
     expect(grams).toBe(150)
   })
@@ -73,7 +73,7 @@ describe('FoodPicker', () => {
     await wrapper.find('button.primary').trigger('click')
 
     // §14: the German separator has to survive, which is why the field is text.
-    expect((wrapper.emitted('submit')![0] as [Food, number])[1]).toBe(12.5)
+    expect((wrapper.emitted('submit')![0] as [NewFood, number])[1]).toBe(12.5)
   })
 
   it('blocks logging without a usable amount and says so', async () => {
@@ -108,9 +108,7 @@ describe('FoodPicker', () => {
   })
 
   it('shows no energy figure for a food that has none', async () => {
-    await foods.put(
-      stored('mystery', 'Mystery paste', { energy: { value: 0, source: 'unknown' } }),
-    )
+    await foods.put(stored('mystery', 'Mystery paste', { energy: { value: 0, source: 'unknown' } }))
     const wrapper = await render()
     await type(wrapper, 'mystery')
 
@@ -145,7 +143,7 @@ describe('FoodPicker', () => {
 
     // #51 uses the picker to choose a source to copy. Collecting grams here
     // would gather something nobody uses.
-    expect((wrapper.emitted('select')![0] as [Food])[0].id).toBe('banana')
+    expect((wrapper.emitted('select')![0] as [NewFood])[0].id).toBe('banana')
     expect(wrapper.find('#picker-grams').exists()).toBe(false)
     expect(wrapper.emitted('submit')).toBeUndefined()
   })

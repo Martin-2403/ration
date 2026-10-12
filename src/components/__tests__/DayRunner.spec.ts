@@ -6,10 +6,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db, mealTemplates } from '../../db'
-import type { DayTemplate, MealTemplate } from '../../types'
+import type { NewDayTemplate, NewMealTemplate } from '../../types'
 import DayRunner from '../DayRunner.vue'
 
-const meal = (id: string, name: string): MealTemplate => ({
+const meal = (id: string, name: string): NewMealTemplate => ({
   id,
   name,
   slots: [
@@ -24,13 +24,13 @@ const meal = (id: string, name: string): MealTemplate => ({
   ],
 })
 
-const day = (mealTemplateIds: string[]): DayTemplate => ({
+const day = (mealTemplateIds: string[]): NewDayTemplate => ({
   id: 'workday',
   name: 'Workday',
   mealTemplateIds,
 })
 
-const render = async (template: DayTemplate, eatenAt?: number) => {
+const render = async (template: NewDayTemplate, eatenAt?: number) => {
   const wrapper = mount(DayRunner, { props: { template, eatenAt } })
   await flushPromises()
 

@@ -63,6 +63,83 @@ describe('food repository', () => {
   })
 })
 
+describe('updatedAt on foods and templates', () => {
+  const at = (iso: string) => Date.parse(iso)
+
+  it('is stamped on a food put and bumped by an edit', async () => {
+    clockAt('2026-08-27T08:00:00Z')
+    await foods.put({ id: 'oats', name: 'Oats', per100g: {} })
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await foods.put({ id: 'oats', name: 'Rolled oats', per100g: {} })
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('is stamped on a meal template put and bumped by an edit', async () => {
+    clockAt('2026-08-27T08:00:00Z')
+    await mealTemplates.put({ id: 'breakfast', name: 'Breakfast', slots: [] })
+    expect((await mealTemplates.get('breakfast'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await mealTemplates.put({ id: 'breakfast', name: 'Brunch', slots: [] })
+    expect((await mealTemplates.get('breakfast'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('is stamped on a day template put and bumped by an edit', async () => {
+    const day = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+
+    clockAt('2026-08-27T08:00:00Z')
+    await dayTemplates.put(day)
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await dayTemplates.put({ ...day, name: 'Office day' })
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('keeps the stamp when a put changes nothing, and bumps it when content changes', async () => {
+    const day = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+    const meal = { id: 'b', name: 'B', slots: [] }
+    const food = {
+      id: 'oats',
+      name: 'Oats',
+      per100g: { energy: { value: 1, source: 'user' as const } },
+    }
+
+    clockAt('2026-08-27T08:00:00Z')
+    await foods.put(food)
+    await mealTemplates.put(meal)
+    await dayTemplates.put(day)
+
+    clockAt('2026-08-27T09:00:00Z')
+    // Same content, even handed back as the stored row with its old stamp.
+    await foods.put((await foods.get('oats'))!)
+    await mealTemplates.put({ ...meal })
+    await dayTemplates.put({ ...day })
+    const first = at('2026-08-27T08:00:00Z')
+    expect((await foods.get('oats'))?.updatedAt).toBe(first)
+    expect((await mealTemplates.get('b'))?.updatedAt).toBe(first)
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(first)
+
+    await foods.put({ ...food, per100g: { energy: { value: 2, source: 'user' } } })
+    await mealTemplates.put({ ...meal, name: 'C' })
+    await dayTemplates.put({ ...day, mealTemplateIds: ['porridge', 'porridge'] })
+    const later = at('2026-08-27T09:00:00Z')
+    expect((await foods.get('oats'))?.updatedAt).toBe(later)
+    expect((await mealTemplates.get('b'))?.updatedAt).toBe(later)
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(later)
+  })
+
+  it('ignores a caller-supplied updatedAt', async () => {
+    // A stale one would corrupt §10's last-write-wins merge.
+    clockAt('2026-08-27T08:00:00Z')
+    await foods.put({ id: 'oats', name: 'Oats', per100g: {}, updatedAt: 0 } as never)
+
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+  })
+})
+
 describe('meal template repository', () => {
   it('lists what was stored', async () => {
     await mealTemplates.put({ id: 'breakfast', name: 'Breakfast', slots: [] })
@@ -89,7 +166,9 @@ describe('day template repository', () => {
 
   it('refuses a day that names no meals', async () => {
     // It would run to completion having logged nothing.
-    await expect(dayTemplates.put({ ...day, mealTemplateIds: [] })).rejects.toThrow('names no meals')
+    await expect(dayTemplates.put({ ...day, mealTemplateIds: [] })).rejects.toThrow(
+      'names no meals',
+    )
   })
 
   it('refuses a day with a blank name', async () => {

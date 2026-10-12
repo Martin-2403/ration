@@ -4,10 +4,10 @@ import { onMounted, ref } from 'vue'
 import { useMeal } from '../composables/useMeal'
 import { formatAmount } from '../nutrient-display'
 import { useLogStore } from '../stores/log'
-import type { MealTemplate } from '../types'
+import type { NewMealTemplate } from '../types'
 
 const { template, eatenAt } = defineProps<{
-  template: MealTemplate
+  template: NewMealTemplate
   /** When the meal was eaten. Defaults to now, and is not always now (§7, #61). */
   eatenAt?: number
 }>()

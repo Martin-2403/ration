@@ -7,7 +7,7 @@
  * or the evaluation.
  */
 import { NUTRIENTS, type NutrientKey, type NutrientMap } from './data/nutrients'
-import type { Food } from './types'
+import type { NewFood } from './types'
 
 export interface UserFoodInput {
   name: string
@@ -15,7 +15,7 @@ export interface UserFoodInput {
   per100g: Partial<Record<NutrientKey, number>>
 }
 
-export function buildUserFood(input: UserFoodInput, id: string = crypto.randomUUID()): Food {
+export function buildUserFood(input: UserFoodInput, id: string = crypto.randomUUID()): NewFood {
   const per100g: NutrientMap = {}
 
   for (const key of Object.keys(NUTRIENTS) as NutrientKey[]) {
@@ -74,10 +74,10 @@ export interface FoodRevision {
  * percentage has one changed number and a dozen that are still label-derived.
  */
 export function reviseFood(
-  original: Food,
+  original: NewFood,
   input: FoodRevision,
   id: string = original.id,
-): Food {
+): NewFood {
   // Starts from what the original recorded, so a nutrient outside `asked`
   // carries over untouched rather than being dropped or blanked.
   const per100g: NutrientMap = { ...original.per100g }
