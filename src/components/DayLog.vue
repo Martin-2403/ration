@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Pencil, Trash2, X } from '@lucide/vue'
+import { Trash2 } from '@lucide/vue'
 import { ref } from 'vue'
 
 import { formatAmount, hasNoData } from '../nutrient-display'
 import type { LogEntry, StoredLogEntry } from '../types'
+import EditCloseIcon from './EditCloseIcon.vue'
 import EntryEditor from './EntryEditor.vue'
 import IconAction from './IconAction.vue'
 
@@ -42,7 +43,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
           </span>
           <span class="entry-actions">
             <!-- Still one control that toggles the inline editor: the Pencil
-                 becomes an X in the same slot while it is open. The accessible
+                 morphs into an X in the same slot while it is open. The accessible
                  name stays "Edit ..." and aria-expanded carries the state;
                  title is only the tooltip. -->
             <IconAction
@@ -52,8 +53,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
               :aria-expanded="editingId === entry.id"
               @click="editingId = editingId === entry.id ? null : entry.id!"
             >
-              <X v-if="editingId === entry.id" :size="20" :stroke-width="1.5" aria-hidden="true" />
-              <Pencil v-else :size="20" :stroke-width="1.5" aria-hidden="true" />
+              <EditCloseIcon :open="editingId === entry.id" />
             </IconAction>
             <IconAction
               variant="danger"
