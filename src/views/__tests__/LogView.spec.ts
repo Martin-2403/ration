@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addLocalDays, localMiddayFromISODate, startOfLocalDay, toISODate } from '../../dates'
 import { db, dayTemplates, mealTemplates } from '../../db'
@@ -11,10 +11,21 @@ import router from '../../router'
 import { useLogStore } from '../../stores/log'
 import LogView from '../LogView.vue'
 
+/**
+ * Unmounted after each test: a view left mounted keeps its popstate listener
+ * (#119), and a stale one reacts to history moves made by the next test's view.
+ */
+const mounted: Array<{ unmount: () => void }> = []
+
+afterEach(() => {
+  mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+})
+
 const render = async () => {
   router.push('/log')
   await router.isReady()
   const wrapper = mount(LogView, { global: { plugins: [router] } })
+  mounted.push(wrapper)
   await flushPromises()
 
   // The template list is read from Dexie (#96) rather than imported, so the
@@ -64,6 +75,25 @@ beforeEach(async () => {
 })
 
 describe('LogView', () => {
+  it('steps back one level per browser back and keeps the Back button in sync (#119)', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Build a meal').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#template-name').exists()).toBe(true)
+
+    // A native back gesture is history.back(); it must act like the button.
+    history.back()
+    await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(false))
+    expect(wrapper.find('.back').exists()).toBe(true)
+
+    await buttonNamed(wrapper, '← Back').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.back').exists()).toBe(false)
+    // The button consumed its own entry, so the history is not one ahead.
+    await vi.waitFor(() => expect(history.state?.rationStep ?? 0).toBe(0))
+  })
+
   it('defaults to today', async () => {
     const wrapper = await render()
 
@@ -169,6 +199,48 @@ describe('LogView', () => {
     // Settle before the test ends: a row landing after the next test's
     // beforeEach has cleared the table turns up as that test's entry.
     await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+  })
+
+  const stepOf = () => history.state?.rationStep ?? 0
+
+  it('steps back through the day path one browser back at a time (#119)', async () => {
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Build a day').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    history.back()
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Build a day')).toBeDefined())
+    expect(stepOf()).toBe(1)
+
+    history.back()
+    await vi.waitFor(() => expect(wrapper.find('.back').exists()).toBe(false))
+    expect(stepOf()).toBe(0)
+  })
+
+  it('leaves no entries behind when finish() resets two levels at once (#119)', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Porridge').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('.back').exists()).toBe(false))
+    await vi.waitFor(() => expect(stepOf()).toBe(0))
+  })
+
+  it('consumes the entry when a form is cancelled (#119)', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Build a meal').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    await buttonNamed(wrapper, 'Cancel').trigger('click')
+    await vi.waitFor(() => expect(stepOf()).toBe(1))
+    expect(optionNamed(wrapper, 'Build a meal')).toBeDefined()
   })
 
   it('logs a meal against today at the time of the write', async () => {

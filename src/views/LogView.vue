@@ -13,6 +13,7 @@
 import { Copy, Pencil, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 
+import { useStepHistory } from '../composables/useStepHistory'
 import DayRunner from '../components/DayRunner.vue'
 import DayTemplateForm from '../components/DayTemplateForm.vue'
 import FoodForm from '../components/FoodForm.vue'
@@ -213,16 +214,34 @@ watch(choice, () => {
 function goBack() {
   const current = choice.value
 
-  if (current?.kind === 'template' || current?.kind === 'meal-form') {
-    choice.value = { kind: 'meals' }
-  } else if (current?.kind === 'day' || current?.kind === 'day-form') {
-    choice.value = { kind: 'days' }
-  } else if (current?.kind === 'variation' && current.source) {
-    choice.value = { kind: 'variation' }
-  } else {
-    choice.value = undefined
-  }
+  choice.value = current && parentOf(current)
 }
+
+type Choice = NonNullable<typeof choice.value>
+
+/** Where one step back from `current` lands: the single place that knows the flow's shape. */
+function parentOf(current: Choice): Choice | undefined {
+  if (current.kind === 'template' || current.kind === 'meal-form') return { kind: 'meals' }
+  if (current.kind === 'day' || current.kind === 'day-form') return { kind: 'days' }
+  if (current.kind === 'variation' && current.source) return { kind: 'variation' }
+
+  return undefined
+}
+
+/**
+ * How many steps deep `choice` is, counted by walking `parentOf` to the options.
+ * Only used to keep browser history in step with the view (#119); derived from
+ * the same function as `goBack` so the two cannot drift apart.
+ */
+const depth = computed(() => {
+  let steps = 0
+
+  for (let at = choice.value; at; at = parentOf(at)) steps++
+
+  return steps
+})
+
+useStepHistory(() => depth.value, goBack)
 
 /**
  * A count and the first couple of names. Naming them all would reintroduce the
