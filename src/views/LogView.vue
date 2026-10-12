@@ -383,6 +383,7 @@ async function logFood(food: Food, grams: number) {
                    (§13). -->
               <span v-if="match.origin === 'stored'" class="row-actions">
                 <IconAction
+                  edit
                   title="Edit"
                   :aria-label="`Edit ${match.template.name}`"
                   @click="choice = { kind: 'meal-form', draft: match.template }"
@@ -461,6 +462,7 @@ async function logFood(food: Food, grams: number) {
               </button>
               <span class="row-actions">
                 <IconAction
+                  edit
                   title="Edit"
                   :aria-label="`Edit ${template.name}`"
                   @click="choice = { kind: 'day-form', draft: template, existing: true }"

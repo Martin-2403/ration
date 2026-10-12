@@ -64,6 +64,17 @@ const pairs = (palette: Palette) =>
     })),
   )
 
+// --edit-tint is the Edit icon's hover fill with --ink on top. The icon is a
+// graphic (3:1) but is held to the text floor: it is all that marks the control.
+describe.each([
+  { scheme: 'light', palette: light },
+  { scheme: 'dark', palette: dark },
+])('$scheme edit highlight', ({ palette }) => {
+  it('keeps --ink legible on --edit-tint', () => {
+    expect(contrastRatio(palette.ink!, palette['edit-tint']!)).toBeGreaterThanOrEqual(4.5)
+  })
+})
+
 describe('contrast arithmetic', () => {
   // The formula is the thing everything else trusts, so it is pinned to values
   // that are not in dispute rather than to the palette it will be used on.
