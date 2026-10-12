@@ -12,41 +12,28 @@ scope by decision.
 
 ## 0. Starting from here (read first)
 
-This file is the single source of truth for the project. It was written to be a
-self-contained spec — everything needed to build the MVP is below, with rationale.
-If you're an AI coding assistant picking this up, read the whole file first, then
-follow the build order.
+This file is the single source of truth for what to build and why. It was written to
+be a self-contained spec — everything needed to build the MVP is below, with
+rationale. How the work is split and shipped is in `CLAUDE.md` (§19).
 
-**First session — scaffolding:**
+**Build order** (each layer shippable before the next; status as of 2026-10-12):
 
-1. Scaffold with `npm create vue@latest` — Vue's own scaffolder — selecting
-   TypeScript, Router, Pinia, Vitest, ESLint and Prettier. It wires those up
-   correctly, including the Vitest config, which is tedious to assemble by hand.
-   Then install `dexie`, `@lucide/vue`, `vite-plugin-pwa`, and the IBM Plex fonts
-   (see §15). Note: create-vue also ships `oxlint` with a mismatched peer range
-   that blocks further installs — remove `oxlint` and `eslint-plugin-oxlint`.
-2. Create `src/theme/tokens.css` from the design tokens in §15 (palette, type,
-   motion) — **both the light and dark blocks**, not light alone. Load IBM Plex Sans
-   + IBM Plex Mono. Components reference CSS variables, never literal hex.
-3. Define the nutrient registry (`src/data/nutrients.ts`, §5) before any feature
-   code. Every later layer keys on it: canonical units, labels, targets, limits.
-4. Lay out the folder structure in §16.
-
-**Build order** (each step is shippable before the next — see §16 for detail):
-
+0. **Scaffold** — design tokens, light + dark (§15); the nutrient registry (§5);
+   router; Vitest. **Done** (#2).
 1. **Core loop** — meal templates → slots → daily totals, wired to Dexie (§7, §3
    for the nutrient/provenance model). Built from scratch; there is no prior
    prototype to port. The math is small: per-100g scaling by `grams / 100`, slot
    resolution to a chosen Food id, sum across items (§7). Includes **manual food
-   entry** — without it the app can't log an apple (§7).
+   entry** — without it the app can't log an apple (§7). **Done** (#3).
 2. **Nutrient config + RDI evaluation view** (§5, §9). Build this second — it
    exercises the provenance model and the data-quality indicator end to end.
-   Two-sided: shortfalls *and* upper limits (§5, §9).
-3. **Barcode resolver + offline cache** (§4, §12, §13). Start with `units.ts`
-   normalization (§6), then the tier walk.
-4. **Supplements + schedules** (§8).
-5. **Backup / restore** (§10).
+   Two-sided: shortfalls *and* upper limits (§5, §9). **Done** (#14).
+3. **Barcode resolver + offline cache + quick-log** (§4, §12, §13). Start with
+   `units.ts` normalization (§6), then the tier walk. Open (#15).
+4. **Supplements + schedules** (§8). Open (#4).
+5. **Backup / restore + storage persistence** (§10). Open (#5).
 6. **[deferred]** Lab feedback (§11) — only after the privacy review noted there.
+   Open (#6).
 
 **Non-negotiables to keep in mind while building:**
 
@@ -61,14 +48,6 @@ follow the build order.
 - No LLM enrichment (decided, §3). OCR is kept — it's transcription, not estimation.
 - Request storage persistence early (§10). Local-only with no accounts means browser
   eviction is unrecoverable data loss.
-
-**Suggested opening prompt for a coding assistant:**
-
-> Read PROJECT.md — it's the full spec for this project. Confirm you've read it,
-> then do all four "First session — scaffolding" steps from §0: scaffold Vite + Vue 3
-> + TS, install the dependencies, create theme/tokens.css from §15 with both the
-> light and dark blocks, and define the nutrient registry from §5. Don't start
-> feature code yet — stop after scaffolding so I can review.
 
 ---
 
@@ -802,6 +781,7 @@ reference variables, never literal hex.
 src/
   theme/
     tokens.css          // design tokens, light + dark — single source (§15)
+    base.css            // element defaults; the only place tokens apply globally (§15)
   i18n/
     index.ts            // vue-i18n instance, English-only for MVP (§14)
     en.ts               // UI strings; nutrient labels keyed on registry ids (§5)
@@ -809,34 +789,42 @@ src/
     nutrients.ts        // NUTRIENT REGISTRY — build first, everything keys on it (§5)
     foods.ts            // seed foods + meal templates
     rdi.ts              // targets + upper limits, data-driven (§5)
-    ocr-terms.de.ts     // German label vocabulary -> nutrient keys
+    ocr-terms.de.ts     // German label vocabulary -> nutrient keys (planned, layer 3)
   types.ts              // domain types from §7 — no persistence imports
   db.ts                 // Dexie schema + repository implementations (§2)
-  units.ts              // canonical normalization (§6)
+  units.ts              // canonical normalization (§6) (planned, layer 3)
   totals.ts             // scaling + summing, no Vue imports (§7)
   dates.ts              // local-midnight day boundaries (§9)
+  parse-amount.ts       // typed numeric input, decimal comma included (§14)
+  targets.ts            // what intake is measured against: goal, then reference (§5, §9)
+  evaluation.ts         // rolling windows, daysLogged denominator, two-sided (§9)
   food-lookup.ts        // seeds, then store (§13)
   template-lookup.ts    // the same two paths for meal templates (§13)
+  day-templates.ts      // ordered meals logged as one day, by id (§7)
   user-food.ts          // hand-entered food -> Food tagged 'user' (§7)
   nutrient-display.ts   // what the UI may claim about a total (§9, §15)
-  resolver.ts           // barcode -> NutrientMap tier walk (§4)
-  router.ts             // one route per view (§2)
+  resolver.ts           // barcode -> NutrientMap tier walk (§4) (planned, layer 3)
+  router/
+    index.ts            // one route per view (§2)
   composables/
     useMeal.ts          // reactive draft state only; math lives in totals.ts
+    useWindow.ts        // the log over a rolling window; math in evaluation.ts (§9)
   stores/
     log.ts              // Pinia + Dexie liveQuery
     config.ts           // tracked nutrients + targets
-  backup/
+  backup/               // (planned, layer 5)
     export.ts           // versioned envelope + WebCrypto (§10)
     import.ts           // decrypt + merge/replace
   views/
     DayView.vue  LogView.vue  EvaluationView.vue  SupplementsView.vue  SettingsView.vue
   components/
-    AppNav.vue  DaySummary.vue  MealBuilder.vue  MealSlot.vue  DayLog.vue
-    MealTemplateForm.vue  NutrientReport.vue  NutrientBar.vue  FoodForm.vue
-    FoodPicker.vue  EntryEditor.vue  GoalForm.vue  SupplementForm.vue
-    BackupPanel.vue
+    AppNav.vue  DaySummary.vue  MealBuilder.vue  DayLog.vue  MealTemplateForm.vue
+    NutrientBar.vue  FoodForm.vue  FoodPicker.vue  EntryEditor.vue  GoalForm.vue
+    DayTemplateForm.vue  DayRunner.vue
+    SupplementForm.vue  (planned, layer 4)
+    BackupPanel.vue     (planned, layer 5)
   App.vue
+  main.ts               // entry: fonts, tokens + base, Pinia, router, i18n
 ```
 
 **Tests live beside the code they cover**, in a `__tests__/` directory next to it —
@@ -846,16 +834,7 @@ which module owns what, and a mirror tree throws that away and then drifts from 
 `eslint.config.ts` scopes the Vitest plugin to `src/**/__tests__/*` for the same
 reason. Colocated test files never reach the bundle — nothing imports them.
 
-**Build sequence** (each layer shippable before the next):
-
-0. Scaffold: tokens (light + dark), nutrient registry, router, Vitest.
-1. Core loop — meal templates → slots → daily totals + manual food entry, on Dexie.
-2. Nutrient config + evaluation view, two-sided (exercises provenance, coverage,
-   data-quality and over-limit end to end).
-3. Barcode resolver + offline cache + quick-log.
-4. Supplements + schedules.
-5. Backup/restore + storage persistence.
-6. **[deferred]** Lab feedback, after privacy sign-off.
+**Build sequence**: see the build order in §0, which also tracks each layer's status.
 
 ---
 
@@ -932,94 +911,9 @@ Out of scope for MVP: e2e and visual-regression testing.
 
 ## 19. Coding with AI coding assistant
 
-This is a collaboration, not a handoff. The goal is to keep the speed of assisted
-coding without losing the mental model of the codebase.
-
-### Division of work: split by who decides, not who types
-
-The instinct to "keep the small tasks" is backwards — small tasks teach the least
-per minute spent. The files that constrain everything else are the ones worth typing
-by hand, and in this project they are short.
-
-**Owned by the human** — the shapes that everything downstream reads:
-
-- `data/nutrients.ts`, the registry (§5), and the domain types in `types.ts`
-- anything touching provenance semantics (§3) or the `daysLogged` denominator and
-  window math (§9) — the places where a wrong answer still looks plausible
-- the **[verify]** items in §18 — the *decisions* in them, at least. Sourcing was
-  delegated on 2026-09-03: the assistant may fetch the primary document and
-  transcribe from it, recording the source and retrieval date beside the value. It
-  is still specifically instructed never to fill one in from memory, and licence or
-  terms questions come back as a report rather than a decision. What stays here is
-  which framework, how wide a first pass, and whether a licence is acceptable
-
-**Owned by the assistant** — mechanical expansion of decisions already made:
-
-- Dexie schema boilerplate, Pinia store plumbing, router wiring
-- Vue component markup and token wiring (§15)
-- the German OCR vocabulary (§14) — tedious data entry
-- resolver tier plumbing (§4), WebCrypto envelope mechanics (§10)
-
-### Tests are the interface
-
-Where it fits: **the human writes the failing test, the assistant makes it pass.**
-Stating what "correct" means is the part worth doing by hand; §17 already enumerates
-the surface. This matters most for `units.ts` conversions, the evaluation
-denominator, and anything where a plausible-looking wrong number would go unnoticed.
-
-### Working rhythm
-
-- **One issue → one branch → one PR.** The issues are scoped for this.
-- **Keep the issue list honest.** A PR that finishes an issue says `Closes #N` in
-  its body, so merging closes it without anyone remembering to. A PR that only
-  moves an issue along leaves a comment saying what landed and what is left. An
-  issue list nobody prunes stops being a plan and becomes a graveyard — and the
-  first thing that rots is the difference between "not started" and "nearly done".
-- Do not close an issue to look productive. If nothing is finishable, say so.
-- **Never merge a diff that hasn't been read line by line.** A diff too big to hold
-  in your head means the task was scoped too big — that is a scoping signal, not a
-  reason to skim.
-- For anything non-obvious, ask for the approach in a few lines *before* any code.
-  Far cheaper to disagree about a sentence than about a 300-line diff.
-- Speed comes from deciding and reviewing quickly, not from typing quickly. Code
-  written by hand will not be fast, and that is fine — it is bought understanding.
-- Watch for rubber-stamping when tired. The fix is to stop merging, not to read
-  harder.
-
-### When the assistant stops and asks
-
-Stop and ask rather than decide, whenever:
-
-- the answer is not already in this document
-- a **[verify]** value would have to be guessed to continue
-- the change would bend one of the non-negotiables in §0
-- the diff is growing past what a single PR should carry
-- the request has a plausible second reading that leads somewhere different
-
-State what you would do and why in a couple of lines, then wait. Conversely: do
-**not** ask about things this document already settles — read it first.
-
-### Naming commits and pull requests
-
-**Write the title for the history, not for the review.** A PR title and a commit
-subject outlive the review that produced them: they end up in `git log` and in the
-merge commit, read by someone with no memory of the discussion.
-
-- Describe the **durable change**, never the review-time state. "Spec-as-test for
-  the nutrient registry" — not "(red until implemented)", "WIP", "part 2 of 3",
-  "first attempt". Those stop being true on merge and mislead from then on.
-- Dependencies between PRs belong in the body ("depends on #24"), not the title.
-- The body explains **why**, and may record constraints that still hold. It should
-  not narrate the review — a body saying "red on purpose, the file does not exist
-  yet" is already wrong once the follow-up commit lands.
-- Reference sections and issues where they help a future reader (§9, #17), since
-  those stay resolvable.
-
-### Code style
-
-- keep code simple and readable
-- comment complicated code explaining whys not just what
-- keep commit messages, pr messages clean, no AI reference, short explanatory message written from a dev POV
+Moved to [`CLAUDE.md`](CLAUDE.md), the working agreement: the division of work, when
+the assistant stops and asks, commit and PR rules, and the **[verify]** sourcing
+delegation. The heading stays so that citations of §19 still resolve.
 
 ---
 
