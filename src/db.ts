@@ -115,6 +115,8 @@ function plain<T>(value: T): T {
  */
 function noteUserWrite(): void {
   void requestPersistence()
+}
+
 /** Structural equality for plain JSON data (objects, arrays, primitives). */
 function sameJson(a: unknown, b: unknown): boolean {
   if (a === b) return true
@@ -221,6 +223,7 @@ export const mealTemplates: MealTemplateRepository = {
   list: () => db.mealTemplates.toArray(),
   get: (id) => db.mealTemplates.get(id),
   async put(template) {
+    noteUserWrite()
     await db.mealTemplates.put(stamped(template, await db.mealTemplates.get(template.id)))
   },
   async remove(id) {
@@ -245,6 +248,7 @@ export const dayTemplates: DayTemplateRepository = {
       throw new Error(`day template ${template.id} names no meals`)
     }
 
+    noteUserWrite()
     await db.dayTemplates.put(stamped(template, await db.dayTemplates.get(template.id)))
   },
 
