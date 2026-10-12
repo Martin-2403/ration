@@ -46,7 +46,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
                  name stays "Edit ..." and aria-expanded carries the state;
                  title is only the tooltip. -->
             <IconAction
-              edit
+              variant="edit"
               :title="editingId === entry.id ? 'Close' : 'Edit'"
               :aria-label="`Edit ${entry.name}`"
               :aria-expanded="editingId === entry.id"
@@ -56,7 +56,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
               <Pencil v-else :size="20" :stroke-width="1.5" aria-hidden="true" />
             </IconAction>
             <IconAction
-              danger
+              variant="danger"
               title="Remove"
               :aria-label="`Remove ${entry.name}`"
               @click="emit('remove', entry.id!)"

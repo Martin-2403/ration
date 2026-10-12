@@ -27,13 +27,12 @@ describe('IconAction', () => {
     expect(clicks).toBe(1)
   })
 
-  it('adds the edit class only when asked', () => {
-    expect(mount(IconAction).classes()).not.toContain('edit')
-    expect(mount(IconAction, { props: { edit: true } }).classes()).toContain('edit')
+  it.each(['edit', 'danger'] as const)('adds the %s class only for that variant', (variant) => {
+    expect(mount(IconAction).classes()).toEqual(['icon-action'])
+    expect(mount(IconAction, { props: { variant } }).classes()).toContain(variant)
   })
 
-  it('adds the danger class only when asked', () => {
-    expect(mount(IconAction).classes()).not.toContain('danger')
-    expect(mount(IconAction, { props: { danger: true } }).classes()).toContain('danger')
+  it('carries one variant at a time', () => {
+    expect(mount(IconAction, { props: { variant: 'edit' } }).classes()).not.toContain('danger')
   })
 })

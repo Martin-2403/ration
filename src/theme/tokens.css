@@ -25,8 +25,9 @@
   /* Hover fill for the Edit icon action (#137): a muted straw yellow, paler and
      greener than --macro-fat's amber, which is a nutrient-data hue and not for
      controls. A fill only, so like --primary-tint it has no floor against the
-     surface (1.32:1); what it must clear is the icon on top, --ink at 13.57:1. */
-  --edit-tint: #f2e0a0;
+     surface (1.82:1, close to dark's 1.88:1); what it must clear is the icon on
+     top, --ink at 9.82:1. */
+  --edit-tint: #dfbd52;
 
   /* macros — kept within the clinical family */
   --macro-protein: #146c6a; /* petrol */
