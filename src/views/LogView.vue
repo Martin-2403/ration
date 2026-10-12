@@ -18,6 +18,7 @@ import DayRunner from '../components/DayRunner.vue'
 import DayTemplateForm from '../components/DayTemplateForm.vue'
 import FoodForm from '../components/FoodForm.vue'
 import FoodPicker from '../components/FoodPicker.vue'
+import IconAction from '../components/IconAction.vue'
 import MealBuilder from '../components/MealBuilder.vue'
 import MealTemplateForm from '../components/MealTemplateForm.vue'
 import { dayTemplates, mealTemplates } from '../db'
@@ -381,24 +382,21 @@ async function logFood(food: Food, grams: number) {
                    and a stored copy of one would be shadowed by it anyway
                    (§13). -->
               <span v-if="match.origin === 'stored'" class="row-actions">
-                <button
-                  type="button"
-                  class="icon-action"
+                <IconAction
                   title="Edit"
                   :aria-label="`Edit ${match.template.name}`"
                   @click="choice = { kind: 'meal-form', draft: match.template }"
                 >
                   <Pencil :size="20" :stroke-width="1.5" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  class="icon-action danger"
+                </IconAction>
+                <IconAction
+                  danger
                   title="Remove"
                   :aria-label="`Remove ${match.template.name}`"
                   @click="removingMealId = match.template.id"
                 >
                   <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
-                </button>
+                </IconAction>
               </span>
             </div>
             <!-- A second tap, not the first: a template can be the only
@@ -462,20 +460,16 @@ async function logFood(food: Food, grams: number) {
                 <span class="detail">{{ template.mealTemplateIds.length }} meal(s)</span>
               </button>
               <span class="row-actions">
-                <button
-                  type="button"
-                  class="icon-action"
+                <IconAction
                   title="Edit"
                   :aria-label="`Edit ${template.name}`"
                   @click="choice = { kind: 'day-form', draft: template, existing: true }"
                 >
                   <Pencil :size="20" :stroke-width="1.5" aria-hidden="true" />
-                </button>
+                </IconAction>
                 <!-- Beside the day it copies: "like my workday, but" is how the
                      second one gets made (#52). -->
-                <button
-                  type="button"
-                  class="icon-action"
+                <IconAction
                   title="Copy"
                   :aria-label="`Copy ${template.name}`"
                   @click="
@@ -486,16 +480,15 @@ async function logFood(food: Food, grams: number) {
                   "
                 >
                   <Copy :size="20" :stroke-width="1.5" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  class="icon-action danger"
+                </IconAction>
+                <IconAction
+                  danger
                   title="Remove"
                   :aria-label="`Remove ${template.name}`"
                   @click="removingDayId = template.id"
                 >
                   <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
-                </button>
+                </IconAction>
               </span>
             </div>
             <div v-else class="confirm-remove">
@@ -645,8 +638,8 @@ input:hover {
 }
 
 /* Scoped to its own class rather than every button under .options: that
-   used to be "every button", which meant row-main and icon-action below
-   each had to fight free of a grid/width/border/background meant for a
+   used to be "every button", which meant row-main below and
+   IconAction each had to fight free of a grid/width/border/background meant for a
    plain option row, not for a button sharing a card with other controls.
    The five top-level choices and the two "Build a ..." rows are the only
    buttons actually shaped like this. */
@@ -699,52 +692,13 @@ input:hover {
   cursor: pointer;
 }
 
+/* The 44px buttons in here come from IconAction. */
 .row-actions {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   padding: 0 var(--space-3);
   border-left: 1px solid var(--line);
-}
-
-/* Icon only, with the accessible name on the button itself and the icon
-   decorative — same split AppNav's own tab icons already use. title is the
-   tooltip: this is a touch-first app, so hover is a desktop bonus rather than
-   the primary way anyone finds out what the icon means.
-
-   44px, not a smaller icon-sized box: AppNav's own tab links document 2.75rem
-   as the touch-target floor, and three of these sit 4px apart in a row —
-   tight enough that undercutting it invites mis-taps between Edit and
-   Remove specifically. Measured, not assumed: the first pass here was a bare
-   36px before this was checked against that floor. */
-.icon-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  color: var(--ink-soft);
-  background: none;
-  border: none;
-  padding: 0;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background-color var(--motion-fast) var(--ease-out);
-}
-
-.icon-action:hover {
-  color: var(--ink);
-  background: var(--primary-tint);
-}
-
-/* Text would carry this alone elsewhere (§15), but Remove already names
-   itself through its own confirm step — the colour here is a second signal
-   on top of that step, not the only one. */
-.icon-action.danger:hover {
-  color: var(--surface);
-  background: var(--status-under);
 }
 
 .detail {
