@@ -27,6 +27,11 @@ describe('IconAction', () => {
     expect(clicks).toBe(1)
   })
 
+  it('adds the edit class only when asked', () => {
+    expect(mount(IconAction).classes()).not.toContain('edit')
+    expect(mount(IconAction, { props: { edit: true } }).classes()).toContain('edit')
+  })
+
   it('adds the danger class only when asked', () => {
     expect(mount(IconAction).classes()).not.toContain('danger')
     expect(mount(IconAction, { props: { danger: true } }).classes()).toContain('danger')

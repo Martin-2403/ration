@@ -22,6 +22,12 @@
   --primary-tint: #e4efee; /* selected fills, subtle backgrounds */
   --accent-blue: #2f6690; /* secondary data hue, used sparingly */
 
+  /* Hover fill for the Edit icon action (#137): a muted straw yellow, paler and
+     greener than --macro-fat's amber, which is a nutrient-data hue and not for
+     controls. A fill only, so like --primary-tint it has no floor against the
+     surface (1.32:1); what it must clear is the icon on top, --ink at 13.57:1. */
+  --edit-tint: #f2e0a0;
+
   /* macros — kept within the clinical family */
   --macro-protein: #146c6a; /* petrol */
   --macro-carbs: #2f6690; /* steel blue */
@@ -116,6 +122,7 @@
     --primary-strong: #5cb8b4; /* hover / pressed — LIGHTER on dark */
     --primary-tint: #16302f;
     --accent-blue: #6098c4;
+    --edit-tint: #554716; /* dark olive-gold; --ink on it is 7.73:1 */
 
     --macro-protein: #3e9d99;
     --macro-carbs: #6098c4;

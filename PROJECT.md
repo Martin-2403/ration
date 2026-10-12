@@ -659,6 +659,7 @@ it now costs one extra column in the token file.
   --primary-strong:#0E5250;  /* hover / pressed — darker on light */
   --primary-tint:  #E4EFEE;  /* selected fills, subtle backgrounds */
   --accent-blue:   #2F6690;  /* secondary data hue, used sparingly */
+  --edit-tint:     #F2E0A0;  /* Edit icon hover fill: muted straw, not --macro-fat */
 
   /* macros — kept within the clinical family */
   --macro-protein: #146C6A;  /* petrol */
@@ -686,6 +687,7 @@ it now costs one extra column in the token file.
     --primary-strong:#5CB8B4;  /* hover / pressed — LIGHTER on dark, not darker */
     --primary-tint:  #16302F;
     --accent-blue:   #6098C4;
+    --edit-tint:     #554716;
 
     --macro-protein: #3E9D99;
     --macro-carbs:   #6098C4;

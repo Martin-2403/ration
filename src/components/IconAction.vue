@@ -3,11 +3,11 @@
 // goes in the slot and stays decorative: the accessible name is the caller's
 // aria-label, title is only the tooltip, and aria-expanded / @click fall
 // through to the button.
-defineProps<{ danger?: boolean }>()
+defineProps<{ danger?: boolean; edit?: boolean }>()
 </script>
 
 <template>
-  <button type="button" class="icon-action" :class="{ danger }">
+  <button type="button" class="icon-action" :class="{ danger, edit }">
     <slot />
   </button>
 </template>
@@ -40,6 +40,12 @@ defineProps<{ danger?: boolean }>()
 .icon-action:hover {
   color: var(--ink);
   background: var(--primary-tint);
+}
+
+/* Edit keeps the neutral hover's dark icon and swaps only the fill, so the
+   icon stays --ink on --edit-tint (13.57:1 light, 7.73:1 dark). */
+.icon-action.edit:hover {
+  background: var(--edit-tint);
 }
 
 /* Colour is a second signal, never the only one (§15): the aria-label and
