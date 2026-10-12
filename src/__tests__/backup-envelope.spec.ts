@@ -103,4 +103,20 @@ describe('backup envelope', () => {
     expect(env.kdf.iterations).toBe(PBKDF2_ITERATIONS)
     expect(await decryptBackup(env, 'pw')).toEqual(payload)
   }, 30_000)
+
+  it('treats composed and decomposed forms of a passphrase as the same', async () => {
+    const env = await encryptBackup(payload, 'Gr\u00fc\u00dfe', FAST)
+    expect(await decryptBackup(env, 'Gru\u0308\u00dfe')).toEqual(payload)
+  })
+
+  it('rejects an empty passphrase on encrypt and decrypt', async () => {
+    expect(await code(encryptBackup(payload, '', FAST))).toBe('empty-passphrase')
+    const env = await encryptBackup(payload, 'pw', FAST)
+    expect(await code(decryptBackup(env, ''))).toBe('empty-passphrase')
+  })
+
+  it('rejects a payload whose keys differ from the listed classes', async () => {
+    const env = await encryptBackup(payload, 'pw', { ...FAST, classes: ['foods'] })
+    expect(await code(decryptBackup(env, 'pw'))).toBe('malformed')
+  })
 })

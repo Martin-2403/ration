@@ -47,10 +47,17 @@ export const SALT_BYTES = 16
 /** AES-GCM nonce length: the 96 bits the algorithm is specified around. */
 const IV_BYTES = 12
 
-/** Hashes accepted when reading an envelope; anything else is treated as malformed. */
+/**
+ * Hashes accepted when reading an envelope; anything else is treated as malformed.
+ * The read side deliberately accepts older and lower-cost files, so old backups
+ * keep restoring. Only writing uses the sourced figure (PBKDF2_ITERATIONS).
+ */
 const ACCEPTED_HASHES = ['SHA-256', 'SHA-384', 'SHA-512']
 
-/** Upper bound on an envelope's iteration count, so a hostile file cannot hang the device. */
+/**
+ * Upper bound on an envelope's iteration count, so a hostile file cannot hang the
+ * device. There is no lower bound on purpose: see ACCEPTED_HASHES.
+ */
 const MAX_ITERATIONS = 10_000_000
 
 export interface BackupEnvelope {
@@ -74,6 +81,8 @@ export type BackupErrorCode =
    * altered. AES-GCM cannot tell these apart, and neither can we.
    */
   | 'decryption-failed'
+  /** No passphrase was given. */
+  | 'empty-passphrase'
 
 export class BackupError extends Error {
   readonly code: BackupErrorCode
@@ -89,6 +98,8 @@ export interface EncryptOptions {
   iterations?: number
   /** Override for tests. */
   now?: Date
+  /** Header class list; defaults to the payload's keys. Only tests need to override it. */
+  classes?: BackupClass[]
 }
 
 const CHUNK = 0x8000
@@ -119,9 +130,14 @@ async function deriveKey(
   hash: string,
   iterations: number,
 ): Promise<CryptoKey> {
+  if (passphrase.length === 0) {
+    throw new BackupError('empty-passphrase', 'A passphrase is required.')
+  }
   const material = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(passphrase),
+    // NFKC so the same visible passphrase derives the same key whether the
+    // keyboard or device produced it composed (ü) or decomposed (u + U+0308).
+    new TextEncoder().encode(passphrase.normalize('NFKC')),
     'PBKDF2',
     false,
     ['deriveKey'],
@@ -164,7 +180,7 @@ export async function encryptBackup(
   const header = {
     schemaVersion: ENVELOPE_SCHEMA_VERSION,
     createdAt: (options.now ?? new Date()).toISOString(),
-    classes: Object.keys(payload),
+    classes: options.classes ?? Object.keys(payload),
     kdf: {
       name: 'PBKDF2' as const,
       hash: PBKDF2_HASH,
@@ -280,6 +296,10 @@ export async function decryptBackup(
   }
   if (!isRecord(payload) || !Object.values(payload).every(Array.isArray)) {
     throw new BackupError('malformed', 'Backup payload is not a map of class name to rows.')
+  }
+  const keys = new Set(Object.keys(payload))
+  if (keys.size !== envelope.classes.length || !envelope.classes.every((c) => keys.has(c))) {
+    throw new BackupError('malformed', 'Backup payload does not match its listed classes.')
   }
   return payload as BackupPayload
 }
