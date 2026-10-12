@@ -89,4 +89,12 @@ defineProps<{ open: boolean }>()
   opacity: 0;
   transition-delay: 0s, 0s;
 }
+
+/* Reduced motion skips the intermediate frames outright rather than running
+   them in a millisecond (§15). */
+@media (prefers-reduced-motion: reduce) {
+  .edit-close-icon path {
+    transition: none;
+  }
+}
 </style>

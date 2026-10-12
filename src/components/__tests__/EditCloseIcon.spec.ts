@@ -1,5 +1,4 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import EditCloseIcon from '../EditCloseIcon.vue'
@@ -49,18 +48,11 @@ describe('EditCloseIcon', () => {
     expect(d.some((x) => x?.startsWith('M21.174 6.812'))).toBe(true)
   })
 
-  // jsdom evaluates neither scoped CSS nor media queries, so the reduced-motion
-  // guarantee is checked at its source: every duration and delay derives from
-  // --motion-morph, which tokens.css collapses to 1ms under
-  // prefers-reduced-motion (§15).
-  it('takes all timing from --motion-morph, which collapses under reduced motion', () => {
-    const css = iconSource.slice(iconSource.indexOf('<style'))
-    expect(css).toContain('var(--motion-morph)')
-    // No hardcoded non-zero time value.
-    expect(css).not.toMatch(/(?<![\w.-])(?!0s\b)\d+(\.\d+)?m?s\b/)
-    // Vitest blanks imported CSS, so read the token file from the repo root.
-    const tokens = readFileSync('src/theme/tokens.css', 'utf8')
-    const reduced = tokens.slice(tokens.indexOf('@media (prefers-reduced-motion: reduce)'))
-    expect(reduced).toMatch(/--motion-morph:\s*1ms/)
+  // jsdom evaluates neither scoped CSS nor media queries (and Vitest blanks
+  // imported .css), so the rule is checked in the component source.
+  it('turns its transitions off under prefers-reduced-motion', () => {
+    expect(iconSource).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*{[^}]*transition:\s*none/,
+    )
   })
 })

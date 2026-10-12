@@ -731,7 +731,9 @@ the tokens land, and for any pair added later.
 
 - Smooth but simple: **160–220ms**, `ease` / `ease-out`, on hover, selection, and
   state change. Subtle fade or 4–8px slide on mount.
-- No spring/bounce, no orchestrated multi-step sequences.
+- No spring/bounce, no orchestrated multi-step sequences. The one exception is the
+  two-phase edit/close icon morph (`EditCloseIcon`), timed by `--motion-morph`
+  (320ms, half per phase), which collapses under reduced motion like the others.
 - **Respect `prefers-reduced-motion`** — disable transitions/animations.
 
 ### Surfaces & layout
