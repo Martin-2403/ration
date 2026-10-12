@@ -3,11 +3,11 @@
 // goes in the slot and stays decorative: the accessible name is the caller's
 // aria-label, title is only the tooltip, and aria-expanded / @click fall
 // through to the button.
-defineProps<{ danger?: boolean; edit?: boolean }>()
+defineProps<{ variant?: 'edit' | 'danger' }>()
 </script>
 
 <template>
-  <button type="button" class="icon-action" :class="{ danger, edit }">
+  <button type="button" class="icon-action" :class="variant">
     <slot />
   </button>
 </template>
@@ -43,8 +43,10 @@ defineProps<{ danger?: boolean; edit?: boolean }>()
 }
 
 /* Edit keeps the neutral hover's dark icon and swaps only the fill, so the
-   icon stays --ink on --edit-tint (13.57:1 light, 7.73:1 dark). */
-.icon-action.edit:hover {
+   icon stays --ink on --edit-tint (9.82:1 light, 7.73:1 dark). An open editor
+   (aria-expanded) gets the same fill, so touch, which has no hover, shows it. */
+.icon-action.edit:hover,
+.icon-action.edit[aria-expanded='true'] {
   background: var(--edit-tint);
 }
 

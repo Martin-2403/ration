@@ -383,7 +383,7 @@ async function logFood(food: Food, grams: number) {
                    (§13). -->
               <span v-if="match.origin === 'stored'" class="row-actions">
                 <IconAction
-                  edit
+                  variant="edit"
                   title="Edit"
                   :aria-label="`Edit ${match.template.name}`"
                   @click="choice = { kind: 'meal-form', draft: match.template }"
@@ -391,7 +391,7 @@ async function logFood(food: Food, grams: number) {
                   <Pencil :size="20" :stroke-width="1.5" aria-hidden="true" />
                 </IconAction>
                 <IconAction
-                  danger
+                  variant="danger"
                   title="Remove"
                   :aria-label="`Remove ${match.template.name}`"
                   @click="removingMealId = match.template.id"
@@ -462,7 +462,7 @@ async function logFood(food: Food, grams: number) {
               </button>
               <span class="row-actions">
                 <IconAction
-                  edit
+                  variant="edit"
                   title="Edit"
                   :aria-label="`Edit ${template.name}`"
                   @click="choice = { kind: 'day-form', draft: template, existing: true }"
@@ -484,7 +484,7 @@ async function logFood(food: Food, grams: number) {
                   <Copy :size="20" :stroke-width="1.5" aria-hidden="true" />
                 </IconAction>
                 <IconAction
-                  danger
+                  variant="danger"
                   title="Remove"
                   :aria-label="`Remove ${template.name}`"
                   @click="removingDayId = template.id"
