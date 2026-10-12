@@ -21,12 +21,12 @@ import { computed, onMounted, ref } from 'vue'
 import { dayTemplates, mealTemplates } from '../db'
 import { moveMeal, wrapSingleFood } from '../day-templates'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
-import type { DayTemplate, Food, MealTemplate } from '../types'
+import type { Food, NewDayTemplate, NewMealTemplate } from '../types'
 import SingleFoodStep from './SingleFoodStep.vue'
 
 const { draft, existing } = defineProps<{
   /** A saved day to correct, a clone to start from, or nothing at all. */
-  draft?: DayTemplate
+  draft?: NewDayTemplate
   /**
    * True when `draft` is a day already in the store rather than a clone of
    * one. A clone carries an id too — cloneDayTemplate gives it one before the
@@ -38,9 +38,9 @@ const { draft, existing } = defineProps<{
 
 const emit = defineEmits<{
   /** A day that did not exist before, whether built or copied. */
-  saved: [template: DayTemplate]
+  saved: [template: NewDayTemplate]
   /** The same day, corrected. */
-  updated: [template: DayTemplate]
+  updated: [template: NewDayTemplate]
   cancel: []
 }>()
 
@@ -71,7 +71,7 @@ onMounted(async () => {
 })
 
 /** One-slot meals made here and not yet stored; see the header. */
-const created = ref<MealTemplate[]>([])
+const created = ref<NewMealTemplate[]>([])
 
 /** True while the single-food step stands in for the form. */
 const addingSingle = ref(false)
@@ -130,7 +130,7 @@ async function save() {
 
   saving.value = true
 
-  const template: DayTemplate = {
+  const template: NewDayTemplate = {
     id,
     name: name.value.trim(),
     mealTemplateIds: [...meals.value],

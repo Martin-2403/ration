@@ -21,9 +21,19 @@
  * stay absent here because nobody looked those up either. The set grows with the
  * registry, not with this file.
  */
-import type { Food, MealTemplate } from '../types'
+import type { Food, MealTemplate, NewFood, NewMealTemplate } from '../types'
 
-export const SEED_FOODS: Food[] = [
+/**
+ * The `updatedAt` every seed carries. A seed has no write time — it ships with
+ * the app and is never stored — so it gets the epoch rather than a clock reading
+ * that would change on every load. 0 can only lose a last-write-wins comparison
+ * (§10), which is the right answer for a row that is not user data; and seeds
+ * never reach a backup, so nothing reads it. If one is ever put (logFood
+ * does), the repository restamps it with the real write time.
+ */
+export const SEED_UPDATED_AT = 0
+
+const SEED_FOOD_ROWS: NewFood[] = [
   {
     id: 'oats',
     name: 'Rolled oats',
@@ -74,6 +84,11 @@ export const SEED_FOODS: Food[] = [
   },
 ]
 
+export const SEED_FOODS: Food[] = SEED_FOOD_ROWS.map((food) => ({
+  ...food,
+  updatedAt: SEED_UPDATED_AT,
+}))
+
 const BY_ID = new Map(SEED_FOODS.map((food) => [food.id, food]))
 
 /**
@@ -84,7 +99,7 @@ export function seedFood(id: string): Food | undefined {
   return BY_ID.get(id)
 }
 
-export const SEED_TEMPLATES: MealTemplate[] = [
+const SEED_TEMPLATE_ROWS: NewMealTemplate[] = [
   {
     id: 'porridge',
     name: 'Porridge',
@@ -117,3 +132,8 @@ export const SEED_TEMPLATES: MealTemplate[] = [
     ],
   },
 ]
+
+export const SEED_TEMPLATES: MealTemplate[] = SEED_TEMPLATE_ROWS.map((template) => ({
+  ...template,
+  updatedAt: SEED_UPDATED_AT,
+}))

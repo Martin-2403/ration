@@ -63,6 +63,50 @@ describe('food repository', () => {
   })
 })
 
+describe('updatedAt on foods and templates', () => {
+  const at = (iso: string) => Date.parse(iso)
+
+  it('is stamped on a food put and bumped by an edit', async () => {
+    clockAt('2026-08-27T08:00:00Z')
+    await foods.put({ id: 'oats', name: 'Oats', per100g: {} })
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await foods.put({ id: 'oats', name: 'Oats', per100g: {} })
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('is stamped on a meal template put and bumped by an edit', async () => {
+    clockAt('2026-08-27T08:00:00Z')
+    await mealTemplates.put({ id: 'breakfast', name: 'Breakfast', slots: [] })
+    expect((await mealTemplates.get('breakfast'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await mealTemplates.put({ id: 'breakfast', name: 'Brunch', slots: [] })
+    expect((await mealTemplates.get('breakfast'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('is stamped on a day template put and bumped by an edit', async () => {
+    const day = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+
+    clockAt('2026-08-27T08:00:00Z')
+    await dayTemplates.put(day)
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+
+    clockAt('2026-08-27T09:00:00Z')
+    await dayTemplates.put({ ...day, name: 'Office day' })
+    expect((await dayTemplates.get('workday'))?.updatedAt).toBe(at('2026-08-27T09:00:00Z'))
+  })
+
+  it('ignores a caller-supplied updatedAt', async () => {
+    // A stale one would corrupt §10's last-write-wins merge.
+    clockAt('2026-08-27T08:00:00Z')
+    await foods.put({ id: 'oats', name: 'Oats', per100g: {}, updatedAt: 0 } as never)
+
+    expect((await foods.get('oats'))?.updatedAt).toBe(at('2026-08-27T08:00:00Z'))
+  })
+})
+
 describe('meal template repository', () => {
   it('lists what was stored', async () => {
     await mealTemplates.put({ id: 'breakfast', name: 'Breakfast', slots: [] })
@@ -89,7 +133,9 @@ describe('day template repository', () => {
 
   it('refuses a day that names no meals', async () => {
     // It would run to completion having logged nothing.
-    await expect(dayTemplates.put({ ...day, mealTemplateIds: [] })).rejects.toThrow('names no meals')
+    await expect(dayTemplates.put({ ...day, mealTemplateIds: [] })).rejects.toThrow(
+      'names no meals',
+    )
   })
 
   it('refuses a day with a blank name', async () => {

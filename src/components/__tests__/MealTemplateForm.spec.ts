@@ -5,17 +5,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../db'
-import type { MealTemplate } from '../../types'
+import type { MealTemplate, NewMealTemplate } from '../../types'
 import MealTemplateForm from '../MealTemplateForm.vue'
 
-const render = async (draft?: MealTemplate) => {
+const render = async (draft?: NewMealTemplate) => {
   const wrapper = mount(MealTemplateForm, { props: { draft } })
   await flushPromises()
 
   return wrapper
 }
 
-const saved = (id: string): MealTemplate => ({
+const saved = (id: string): NewMealTemplate => ({
   id,
   name: 'Porridge',
   slots: [
@@ -45,7 +45,10 @@ const buttonNamed = (wrapper: Wrapper, label: string) =>
 
 /** Opens the picker for a slot and chooses a food by name. */
 const addFood = async (wrapper: Wrapper, slot: number, foodName: string) => {
-  await wrapper.findAll('button').filter((b) => b.text() === 'Add a food')[slot]!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .filter((b) => b.text() === 'Add a food')
+    [slot]!.trigger('click')
   await flushPromises()
 
   const result = wrapper

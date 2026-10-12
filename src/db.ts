@@ -24,7 +24,10 @@ import type {
   Food,
   LogEntry,
   MealTemplate,
+  NewDayTemplate,
+  NewFood,
   NewLogEntry,
+  NewMealTemplate,
   StoredLogEntry,
 } from './types'
 
@@ -64,6 +67,29 @@ db.version(3).stores({
   dayTemplates: 'id',
 })
 
+// Foods, meal templates and day templates gain `updatedAt` for §10's
+// last-write-wins merge (#142). The rows have no createdAt to inherit it from, so
+// every existing row takes the migration time: an honest "no later than now",
+// which loses to any backup row stamped by a real edit afterwards and wins over
+// nothing it should not.
+//
+// No index on `updatedAt`, so no store is re-declared: the merge reads whole
+// tables and compares in memory, as the lists here already do. `logEntries`
+// indexes it only because nothing else bounds a read there. An index is a later
+// version if a query ever wants one.
+db.version(4).upgrade(async (tx) => {
+  const migratedAt = Date.now()
+
+  for (const store of ['foods', 'mealTemplates', 'dayTemplates']) {
+    await tx
+      .table(store)
+      .toCollection()
+      .modify((row: { updatedAt?: number }) => {
+        row.updatedAt ??= migratedAt
+      })
+  }
+})
+
 export { db }
 
 /**
@@ -82,8 +108,8 @@ function plain<T>(value: T): T {
 export interface FoodRepository {
   get(id: string): Promise<Food | undefined>
   findByBarcode(barcode: string): Promise<Food | undefined>
-  /** Upsert. The resolver writes back whatever it resolved (§4). */
-  put(food: Food): Promise<void>
+  /** Upsert, stamping updatedAt. The resolver writes back whatever it resolved (§4). */
+  put(food: NewFood): Promise<void>
   /**
    * Every stored food, for searching by name (#40).
    *
@@ -99,15 +125,16 @@ export interface FoodRepository {
 export interface MealTemplateRepository {
   list(): Promise<MealTemplate[]>
   get(id: string): Promise<MealTemplate | undefined>
-  put(template: MealTemplate): Promise<void>
+  /** Upsert, stamping updatedAt. */
+  put(template: NewMealTemplate): Promise<void>
   remove(id: string): Promise<void>
 }
 
 export interface DayTemplateRepository {
   list(): Promise<DayTemplate[]>
   get(id: string): Promise<DayTemplate | undefined>
-  /** Upsert. Rejects a day that has no name or names no meals. */
-  put(template: DayTemplate): Promise<void>
+  /** Upsert, stamping updatedAt. Rejects a day that has no name or names no meals. */
+  put(template: NewDayTemplate): Promise<void>
   remove(id: string): Promise<void>
 }
 
@@ -134,7 +161,7 @@ export const foods: FoodRepository = {
   get: (id) => db.foods.get(id),
   findByBarcode: (barcode) => db.foods.where('barcode').equals(barcode).first(),
   async put(food) {
-    await db.foods.put(plain(food))
+    await db.foods.put(plain({ ...food, updatedAt: Date.now() }))
   },
   all: () => db.foods.toArray(),
 }
@@ -143,7 +170,7 @@ export const mealTemplates: MealTemplateRepository = {
   list: () => db.mealTemplates.toArray(),
   get: (id) => db.mealTemplates.get(id),
   async put(template) {
-    await db.mealTemplates.put(plain(template))
+    await db.mealTemplates.put(plain({ ...template, updatedAt: Date.now() }))
   },
   async remove(id) {
     await db.mealTemplates.delete(id)
@@ -167,7 +194,7 @@ export const dayTemplates: DayTemplateRepository = {
       throw new Error(`day template ${template.id} names no meals`)
     }
 
-    await db.dayTemplates.put(plain(template))
+    await db.dayTemplates.put(plain({ ...template, updatedAt: Date.now() }))
   },
 
   async remove(id) {

@@ -6,9 +6,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { SEED_TEMPLATES } from '../data/foods'
 import { db, mealTemplates } from '../db'
 import { findMealTemplate, listMealTemplates } from '../template-lookup'
-import type { MealTemplate } from '../types'
+import type { NewMealTemplate } from '../types'
 
-const template = (id: string, name: string): MealTemplate => ({
+const template = (id: string, name: string): NewMealTemplate => ({
   id,
   name,
   slots: [

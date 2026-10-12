@@ -4,7 +4,7 @@ import { computed, ref, watchEffect } from 'vue'
 import { DECLARATION_NUTRIENTS, type NutrientKey } from '../data/nutrients'
 import { labelFor, unitFor } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
-import type { Food } from '../types'
+import type { NewFood } from '../types'
 import { buildUserFood, reviseFood } from '../user-food'
 
 const { source } = defineProps<{
@@ -12,10 +12,10 @@ const { source } = defineProps<{
    * A food to start from (#51). Present for a clone or a correction, absent
    * when entering something new.
    */
-  source?: Food
+  source?: NewFood
 }>()
 
-const emit = defineEmits<{ submit: [food: Food, grams: number] }>()
+const emit = defineEmits<{ submit: [food: NewFood, grams: number] }>()
 
 // The seven a label declares, not every nutrient the registry tracks (#56).
 // This form is for transcribing a panel, and nobody types 34 values off one;
@@ -201,7 +201,9 @@ function submit(mode: 'new' | 'update' = 'new') {
           <button type="button" class="ghost" :disabled="!canSubmit" @click="submit('update')">
             Update {{ source.name }}
           </button>
-          <button type="submit" :disabled="!canSubmit || nameIsUnchanged">Save as new and log</button>
+          <button type="submit" :disabled="!canSubmit || nameIsUnchanged">
+            Save as new and log
+          </button>
         </template>
         <button v-else type="submit" :disabled="!canSubmit">Save and log</button>
       </div>

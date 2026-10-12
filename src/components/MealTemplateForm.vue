@@ -20,19 +20,19 @@ import { computed, onMounted, ref } from 'vue'
 import { mealTemplates } from '../db'
 import { findFoods } from '../food-lookup'
 import { parseAmount } from '../parse-amount'
-import type { Food, MealSlot, MealTemplate } from '../types'
+import type { Food, MealSlot, NewMealTemplate } from '../types'
 import FoodPicker from './FoodPicker.vue'
 
 const { draft } = defineProps<{
   /** A saved meal to correct, or nothing to build one. */
-  draft?: MealTemplate
+  draft?: NewMealTemplate
 }>()
 
 const emit = defineEmits<{
   /** A meal that did not exist before. */
-  saved: [template: MealTemplate]
+  saved: [template: NewMealTemplate]
   /** The same meal, corrected. */
-  updated: [template: MealTemplate]
+  updated: [template: NewMealTemplate]
   cancel: []
 }>()
 
@@ -49,7 +49,7 @@ interface DraftSlot {
 
 const blankSlot = (): DraftSlot => ({ label: '', options: [], defaultOptionId: '', grams: '100' })
 
-const fromTemplate = (template: MealTemplate): DraftSlot[] =>
+const fromTemplate = (template: NewMealTemplate): DraftSlot[] =>
   template.slots.map((slot) => ({
     id: slot.id,
     label: slot.label,
@@ -136,7 +136,7 @@ async function save() {
 
   saving.value = true
 
-  const template: MealTemplate = {
+  const template: NewMealTemplate = {
     id,
     name: name.value.trim(),
     slots: slots.value.map((slot, index): MealSlot => {

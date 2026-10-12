@@ -10,7 +10,7 @@ import { addLocalDays, nextLocalMidnight, startOfLocalDay } from '../dates'
 import { foods, log } from '../db'
 import { findFood } from '../food-lookup'
 import { mergeTotals, nutrientsFor, sumTotals } from '../totals'
-import type { Food, LogEntry, NewLogEntry, StoredLogEntry } from '../types'
+import type { LogEntry, NewFood, NewLogEntry, StoredLogEntry } from '../types'
 
 export const useLogStore = defineStore('log', () => {
   /** Local midnight of the day being shown (§9). */
@@ -73,7 +73,7 @@ export const useLogStore = defineStore('log', () => {
    * `timestamp` is when it was eaten, which is not always now: the log surface
    * can name an earlier day (§7, #61).
    */
-  async function logFood(food: Food, grams: number, timestamp = Date.now()) {
+  async function logFood(food: NewFood, grams: number, timestamp = Date.now()) {
     await foods.put(food)
 
     return log.add({
