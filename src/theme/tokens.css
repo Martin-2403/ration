@@ -87,6 +87,7 @@
   /* ── Motion ──────────────────────────────────────────────────────────── */
   --motion-fast: 160ms; /* hover, selection */
   --motion-slow: 220ms; /* state change, mount */
+  --motion-morph: 320ms; /* two-phase icon morph (EditCloseIcon); each phase takes half */
   --ease: ease;
   --ease-out: ease-out;
 
@@ -135,5 +136,6 @@
   :root {
     --motion-fast: 1ms;
     --motion-slow: 1ms;
+    --motion-morph: 1ms;
   }
 }
