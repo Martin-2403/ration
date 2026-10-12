@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GoalForm from '../components/GoalForm.vue'
+import StoragePanel from '../components/StoragePanel.vue'
 </script>
 
 <template>
@@ -7,6 +8,8 @@ import GoalForm from '../components/GoalForm.vue'
     <h1>Settings</h1>
 
     <GoalForm />
+
+    <StoragePanel />
   </div>
 </template>
 
