@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Pencil, Trash2, X } from '@lucide/vue'
 import { ref } from 'vue'
 
 import { formatAmount, hasNoData } from '../nutrient-display'
@@ -39,19 +40,29 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
             }}
           </span>
           <span class="entry-actions">
+            <!-- Still one control that toggles the inline editor: the Pencil
+                 becomes an X in the same slot while it is open. The accessible
+                 name stays "Edit ..." and aria-expanded carries the state;
+                 title is only the tooltip. -->
             <button
               type="button"
+              class="icon-action"
+              :title="editingId === entry.id ? 'Close' : 'Edit'"
               :aria-label="`Edit ${entry.name}`"
+              :aria-expanded="editingId === entry.id"
               @click="editingId = editingId === entry.id ? null : entry.id!"
             >
-              {{ editingId === entry.id ? 'Close' : 'Edit' }}
+              <X v-if="editingId === entry.id" :size="20" :stroke-width="1.5" aria-hidden="true" />
+              <Pencil v-else :size="20" :stroke-width="1.5" aria-hidden="true" />
             </button>
             <button
               type="button"
+              class="icon-action danger"
+              title="Remove"
               :aria-label="`Remove ${entry.name}`"
               @click="emit('remove', entry.id!)"
             >
-              Remove
+              <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
             </button>
           </span>
         </div>
@@ -128,7 +139,7 @@ li {
 
 .entry-actions {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 /* The row's four tracks need about 430px with their gaps, which a phone does
@@ -165,22 +176,33 @@ li {
   }
 }
 
-button {
-  font: inherit;
-  font-size: var(--text-caption);
+/* Icon only, as on the Log screen's rows: the accessible name is on the
+   button and the icon is decorative. 44px is the touch-target floor AppNav and
+   LogView document (2.75rem). */
+.icon-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
   color: var(--ink-soft);
   background: none;
-  border: 1px solid var(--line);
+  border: none;
+  padding: 0;
   border-radius: var(--radius-control);
-  padding: var(--space-1) var(--space-3);
   cursor: pointer;
   transition:
     color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out);
+    background-color var(--motion-fast) var(--ease-out);
 }
 
-button:hover {
-  color: var(--status-under);
-  border-color: var(--status-under);
+.icon-action:hover {
+  color: var(--ink);
+  background: var(--primary-tint);
+}
+
+.icon-action.danger:hover {
+  color: var(--surface);
+  background: var(--status-under);
 }
 </style>

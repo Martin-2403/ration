@@ -23,7 +23,7 @@ const entry = (overrides: Partial<StoredLogEntry> = {}): StoredLogEntry => ({
 const render = (entries: LogEntry[]) => mount(DayLog, { props: { entries } })
 
 const buttonNamed = (wrapper: ReturnType<typeof render>, label: string) =>
-  wrapper.findAll('button').find((button) => button.text() === label)!
+  wrapper.findAll('button').find((button) => button.attributes('aria-label') === label)!
 
 beforeEach(async () => {
   await db.logEntries.clear()
@@ -65,7 +65,10 @@ describe('DayLog', () => {
     expect(actions.exists()).toBe(true)
 
     const buttons = actions.findAll('button')
-    expect(buttons.map((button) => button.text())).toEqual(['Edit', 'Remove'])
+    expect(buttons.map((button) => button.attributes('aria-label'))).toEqual([
+      'Edit Porridge',
+      'Remove Porridge',
+    ])
   })
 
   it('removes the entry that was tapped, not another one', async () => {
@@ -84,12 +87,15 @@ describe('DayLog', () => {
 
     expect(wrapper.findComponent({ name: 'EntryEditor' }).exists()).toBe(false)
 
-    await buttonNamed(wrapper, 'Edit').trigger('click')
+    expect(buttonNamed(wrapper, 'Edit Porridge').attributes('aria-expanded')).toBe('false')
+
+    await buttonNamed(wrapper, 'Edit Porridge').trigger('click')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'EntryEditor' }).exists()).toBe(true)
-    expect(buttonNamed(wrapper, 'Close')).toBeDefined()
+    // The accessible name is stable; the open state is aria-expanded.
+    expect(buttonNamed(wrapper, 'Edit Porridge').attributes('aria-expanded')).toBe('true')
 
-    await buttonNamed(wrapper, 'Close').trigger('click')
+    await buttonNamed(wrapper, 'Edit Porridge').trigger('click')
     expect(wrapper.findComponent({ name: 'EntryEditor' }).exists()).toBe(false)
   })
 })
