@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 
 import { BACKUP_CLASSES, collectBackup, countClasses, type CollectedClass } from '../backup/collect'
 import { encryptBackup } from '../backup/envelope'
-import { backupFileName, handOffBackup } from '../backup/hand-off'
-import { lastBackupAt, recordBackup } from '../backup/last-backup'
+import { backupFileName, canShareFile, handOffBackup, type HandOff } from '../backup/hand-off'
+import { lastExport, lastLogExport, recordBackup } from '../backup/last-backup'
 import { checkPassphrase } from '../backup/passphrase'
 
 const labels: Record<CollectedClass, string> = {
@@ -24,7 +24,21 @@ const confirmation = ref('')
 const busy = ref(false)
 const done = ref<string>()
 const failed = ref(false)
-const lastAt = ref(lastBackupAt())
+const lastWithLog = ref(lastLogExport())
+const latest = ref(lastExport())
+
+/**
+ * An encrypted file waiting for the tap that shares it. On a phone the share sheet
+ * only opens from a fresh tap, and encrypting takes long enough to use the last
+ * one up, so the work is done first and the hand-off is a second step. It is held
+ * only until that tap succeeds or the user discards it, never longer.
+ */
+const ready = shallowRef<{ file: File; classes: CollectedClass[] }>()
+const locked = computed(() => busy.value || ready.value !== undefined)
+
+onBeforeUnmount(() => {
+  ready.value = undefined
+})
 
 onMounted(async () => {
   try {
@@ -57,14 +71,48 @@ const countText = (name: CollectedClass) => {
   return `${n} ${n === 1 ? 'item' : 'items'}`
 }
 
-const lastText = computed(() =>
-  lastAt.value === undefined
-    ? 'never'
-    : new Date(lastAt.value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+const dayWithoutMeals = computed(
+  () => selected.value.includes('dayTemplates') && !selected.value.includes('mealTemplates'),
 )
 
+const when = (at: number) =>
+  new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+const held = (classes: string[]) =>
+  classes.map((name) => labels[name as CollectedClass] ?? name).join(', ')
+
+/** What the panel says about the log, which is the part a nudge cares about. */
+const lastText = computed(() =>
+  lastWithLog.value
+    ? `Last backup: ${when(lastWithLog.value.at)} (${held(lastWithLog.value.classes)})`
+    : 'Last backup of your log: never',
+)
+
+/** Shown only when a later export left the log out, so it cannot pass for a full backup. */
+const partialText = computed(() =>
+  latest.value && latest.value.at !== lastWithLog.value?.at
+    ? `Latest partial export: ${when(latest.value.at)} (${held(latest.value.classes)}). It did not include the log.`
+    : undefined,
+)
+
+function finish(outcome: Exclude<HandOff, 'cancelled'>, name: string, classes: CollectedClass[]) {
+  recordBackup(classes)
+  lastWithLog.value = lastLogExport()
+  latest.value = lastExport()
+  ready.value = undefined
+  passphrase.value = ''
+  confirmation.value = ''
+
+  done.value =
+    outcome === 'shared'
+      ? `Shared ${name}.`
+      : outcome === 'fallback'
+        ? `Sharing did not work here, so ${name} was saved as a file instead.`
+        : `Saved as a file: ${name}.`
+}
+
 async function backUp() {
-  if (busy.value || blocker.value) return
+  if (locked.value || blocker.value) return
 
   busy.value = true
   done.value = undefined
@@ -75,28 +123,53 @@ async function backUp() {
     // off the main thread in WebCrypto, but serialising a large log does not.
     await nextTick()
 
-    const payload = await collectBackup(selected.value)
+    const classes = [...selected.value]
+    const payload = await collectBackup(classes)
     const envelope = await encryptBackup(payload, passphrase.value)
     // Read here, in the handler, not at render time.
     const name = backupFileName()
     const file = new File([JSON.stringify(envelope)], name, { type: 'application/json' })
 
+    if (canShareFile(file)) {
+      // The tap that started this is spent by now; wait for a fresh one.
+      ready.value = { file, classes }
+
+      return
+    }
+
+    // A download needs no gesture, so one step is enough.
     const outcome = await handOffBackup(file)
-
-    // A closed share sheet sent nothing anywhere: not a backup, not an error.
-    // The passphrase stays, so trying again costs one tap.
-    if (outcome === 'cancelled') return
-
-    recordBackup()
-    lastAt.value = lastBackupAt()
-    passphrase.value = ''
-    confirmation.value = ''
-    done.value = `${outcome === 'shared' ? 'Shared' : 'Downloaded'} ${name}.`
+    if (outcome !== 'cancelled') finish(outcome, name, classes)
   } catch {
     failed.value = true
   } finally {
     busy.value = false
   }
+}
+
+/** The second tap. Nothing is awaited before the hand-off, or the sheet may refuse. */
+async function shareReady() {
+  const pending = ready.value
+  if (!pending || busy.value) return
+
+  failed.value = false
+  busy.value = true
+
+  try {
+    const outcome = await handOffBackup(pending.file)
+
+    // A closed share sheet sent nothing anywhere: not a backup, not an error.
+    // The file stays ready, so trying again costs one tap.
+    if (outcome !== 'cancelled') finish(outcome, pending.file.name, pending.classes)
+  } catch {
+    failed.value = true
+  } finally {
+    busy.value = false
+  }
+}
+
+function discard() {
+  ready.value = undefined
 }
 </script>
 
@@ -109,9 +182,10 @@ async function backUp() {
       you choose, such as your own cloud drive. It can be restored later.
     </p>
 
-    <p class="last" data-testid="last-backup">Last backup: {{ lastText }}</p>
+    <p class="last" data-testid="last-backup">{{ lastText }}</p>
+    <p v-if="partialText" class="last" data-testid="last-partial">{{ partialText }}</p>
 
-    <fieldset :disabled="busy">
+    <fieldset :disabled="locked">
       <legend>Include</legend>
 
       <label v-for="name in BACKUP_CLASSES" :key="name" class="choice">
@@ -128,7 +202,7 @@ async function backUp() {
         v-model="passphrase"
         type="password"
         autocomplete="new-password"
-        :disabled="busy"
+        :disabled="locked"
       />
     </div>
 
@@ -140,13 +214,17 @@ async function backUp() {
         type="password"
         autocomplete="new-password"
         :aria-invalid="mismatch || undefined"
-        :disabled="busy"
+        :disabled="locked"
       />
     </div>
 
     <div class="messages" aria-live="polite">
       <p v-if="mismatch" class="problem" data-testid="mismatch">
         The two passphrases do not match.
+      </p>
+      <p v-if="dayWithoutMeals" class="problem" data-testid="days-without-meals">
+        <strong>Day templates need meal templates.</strong> A day refers to its meals, and the meals
+        are not in this file, so a restore will refuse it. You can still make this backup.
       </p>
       <p v-if="strength.kind === 'weak'" class="problem" data-testid="weak">
         <strong>Weak passphrase.</strong> {{ strength.reason }} You can still use it.
@@ -160,11 +238,17 @@ async function backUp() {
       anyone, including us. Store it somewhere other than this device.
     </div>
 
-    <p v-if="blocker" class="blocker" data-testid="blocker">{{ blocker }}</p>
+    <p v-if="blocker && !ready" class="blocker" data-testid="blocker">{{ blocker }}</p>
 
-    <button type="submit" :disabled="busy || blocker !== undefined">
+    <button v-if="!ready" type="submit" :disabled="busy || blocker !== undefined">
       {{ busy ? 'Encrypting…' : 'Back up now' }}
     </button>
+
+    <div v-else class="ready" data-testid="ready">
+      <p><strong>Backup ready.</strong> {{ ready.file.name }} is encrypted and not saved yet.</p>
+      <button type="button" :disabled="busy" @click="shareReady">Share or save the backup</button>
+      <button type="button" class="ghost" :disabled="busy" @click="discard">Discard</button>
+    </div>
 
     <p v-if="done" class="ok" role="status" data-testid="done">
       {{ done }} Keep your passphrase: this file cannot be opened without it.
@@ -322,5 +406,21 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.ready {
+  display: grid;
+  gap: var(--space-2);
+}
+
+button.ghost {
+  color: var(--ink-soft);
+  background: none;
+  border-color: var(--line);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: none;
+  border-color: var(--ink-soft);
 }
 </style>
