@@ -55,6 +55,19 @@ Verify a green run against the head SHA you actually pushed, not the branch name
   against its number, then act on what comes back — fix it in the same branch, or
   say in chat why it stands. Only then hand it over. Findings are reported in
   chat, not added to the PR body, and the merge is never the assistant's to make.
+- **Each issue is implemented by its own agent, in its own git worktree.** The main
+  session orchestrates: it writes the brief (the issue, the PROJECT.md sections and
+  CLAUDE.md traps that apply, the files in scope, what "verified" means for this
+  change), spawns the implementer, and keeps only the result in its own context.
+- **Review findings go through the orchestrator, never agent to agent.** The
+  reviewer reports to the main session, which verifies each finding — probe,
+  revert-check, measurement — before sending the confirmed ones back to the same
+  implementer. Reviewers are wrong often enough that acting on an unchecked
+  finding has already reintroduced a fixed bug once (#116's `watch` suggestion).
+- **Independent issues may run in parallel**, if they touch disjoint files —
+  `LogView.vue` is the usual collision — and each worktree runs its dev server on
+  its own port; the preview on 4300 cannot be shared. Expect 1Password signing
+  prompts to arrive together.
 - In chat, write **`PR#64`** and **`I#42`**; inside GitHub bodies use bare `#64` so it
   autolinks. `Closes #N` when the PR finishes the issue, a comment on it when it does
   not.
