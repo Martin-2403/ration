@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BackupRestore from '../components/BackupRestore.vue'
 import GoalForm from '../components/GoalForm.vue'
 import StoragePanel from '../components/StoragePanel.vue'
 </script>
@@ -9,7 +10,9 @@ import StoragePanel from '../components/StoragePanel.vue'
 
     <GoalForm />
 
-    <StoragePanel />
+    <StoragePanel>
+      <BackupRestore />
+    </StoragePanel>
   </div>
 </template>
 
