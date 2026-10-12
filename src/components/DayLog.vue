@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import { formatAmount, hasNoData } from '../nutrient-display'
 import type { LogEntry, StoredLogEntry } from '../types'
 import EntryEditor from './EntryEditor.vue'
+import IconAction from './IconAction.vue'
 
 const { entries } = defineProps<{ entries: LogEntry[] }>()
 
@@ -44,9 +45,7 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
                  becomes an X in the same slot while it is open. The accessible
                  name stays "Edit ..." and aria-expanded carries the state;
                  title is only the tooltip. -->
-            <button
-              type="button"
-              class="icon-action"
+            <IconAction
               :title="editingId === entry.id ? 'Close' : 'Edit'"
               :aria-label="`Edit ${entry.name}`"
               :aria-expanded="editingId === entry.id"
@@ -54,16 +53,15 @@ const stored = (entry: LogEntry) => entry as StoredLogEntry
             >
               <X v-if="editingId === entry.id" :size="20" :stroke-width="1.5" aria-hidden="true" />
               <Pencil v-else :size="20" :stroke-width="1.5" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="icon-action danger"
+            </IconAction>
+            <IconAction
+              danger
               title="Remove"
               :aria-label="`Remove ${entry.name}`"
               @click="emit('remove', entry.id!)"
             >
               <Trash2 :size="20" :stroke-width="1.5" aria-hidden="true" />
-            </button>
+            </IconAction>
           </span>
         </div>
 
@@ -174,35 +172,5 @@ li {
     grid-area: actions;
     justify-content: flex-end;
   }
-}
-
-/* Icon only, as on the Log screen's rows: the accessible name is on the
-   button and the icon is decorative. 44px is the touch-target floor AppNav and
-   LogView document (2.75rem). */
-.icon-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  color: var(--ink-soft);
-  background: none;
-  border: none;
-  padding: 0;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background-color var(--motion-fast) var(--ease-out);
-}
-
-.icon-action:hover {
-  color: var(--ink);
-  background: var(--primary-tint);
-}
-
-.icon-action.danger:hover {
-  color: var(--surface);
-  background: var(--status-under);
 }
 </style>
