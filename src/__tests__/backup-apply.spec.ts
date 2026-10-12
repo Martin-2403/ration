@@ -14,7 +14,7 @@ const FAST = { iterations: 1_000 }
 const food = (id: string, updatedAt = 1_000) => ({
   id,
   name: `Food ${id}`,
-  per100g: { energy: { amount: 100, source: 'off-packaging' } },
+  per100g: { energy: { value: 100, source: 'off-packaging' } },
   updatedAt,
 })
 const meal = (id: string) => ({ id, name: `Meal ${id}`, slots: [], updatedAt: 2_000 })
@@ -127,6 +127,54 @@ describe('replaceFromBackup', () => {
     expect(await db.foods.count()).toBe(1)
   })
 
+  describe('meals named by restored days', () => {
+    it('resolves against the backup when it carries meals, not against this device', async () => {
+      await seedLocal()
+
+      // 'local-meal' is on this device, but the backup's meals replace it.
+      await expect(
+        replaceFromBackup({
+          mealTemplates: [meal('m1')],
+          dayTemplates: [day('d', ['local-meal'])],
+        }),
+      ).rejects.toThrow(/names a meal template \(local-meal\)/)
+
+      await replaceFromBackup({ mealTemplates: [meal('m1')], dayTemplates: [day('d', ['m1'])] })
+      expect((await db.dayTemplates.toArray()).map((d) => d.id)).toEqual(['d'])
+    })
+
+    it('refuses a days-only backup whose meal is not on this device, and writes nothing', async () => {
+      await seedLocal()
+      const before = await snapshot()
+
+      await expect(replaceFromBackup({ dayTemplates: [day('d', ['m1'])] })).rejects.toThrow(
+        /Day template "Day d" names a meal template \(m1\)/,
+      )
+
+      expect(await snapshot()).toEqual(before)
+    })
+
+    it('accepts a days-only backup naming a meal stored on this device', async () => {
+      await seedLocal()
+
+      await replaceFromBackup({ dayTemplates: [day('d', ['local-meal'])] })
+
+      expect((await db.dayTemplates.toArray()).map((d) => d.id)).toEqual(['d'])
+    })
+
+    it('accepts a days-only backup naming a seed meal', async () => {
+      await replaceFromBackup({ dayTemplates: [day('d', ['porridge'])] })
+
+      expect(await db.dayTemplates.count()).toBe(1)
+    })
+
+    it('leaves a log entry whose template is gone alone', async () => {
+      await replaceFromBackup({ logEntries: [{ ...entry(1), templateId: 'deleted-meal' }] })
+
+      expect(await db.logEntries.count()).toBe(1)
+    })
+  })
+
   it('accepts a payload held in reactive state', async () => {
     await replaceFromBackup(reactive({ foods: [food('f1')] }) as BackupPayload)
 
@@ -165,6 +213,55 @@ describe('replaceFromBackup', () => {
     ['a zero target', { goals: [goal('energy', 0)] }, /above zero/],
     ['a negative target', { goals: [goal('energy', -5)] }, /above zero/],
     ['a repeated id', { foods: [food('f1'), food('f1')] }, /repeats the id/],
+    [
+      'a bare number as a nutrient value',
+      { foods: [{ ...food('f1'), per100g: { energy: 100 } }] },
+      /foods row 1 has invalid nutrient values/,
+    ],
+    [
+      'a nutrient value without a source',
+      { foods: [{ ...food('f1'), per100g: { energy: { value: 1 } } }] },
+      /foods row 1 has invalid nutrient values/,
+    ],
+    [
+      'a meal slot without a kind',
+      { mealTemplates: [{ ...meal('m'), slots: [{ id: 's', label: 'S', options: [] }] }] },
+      /mealTemplates row 1 has invalid slots/,
+    ],
+    [
+      'a log item with text grams',
+      { logEntries: [{ ...entry(1), items: [{ kind: 'food', foodId: 'f', grams: '50' }] }] },
+      /logEntries row 1 has invalid items/,
+    ],
+    [
+      'a log item of an unknown kind',
+      { logEntries: [{ ...entry(1), items: [{ kind: 'drink', foodId: 'f', grams: 5 }] }] },
+      /has invalid items/,
+    ],
+    [
+      'a supplement item that is not marked confirmed or not',
+      {
+        logEntries: [{ ...entry(1), items: [{ kind: 'supplement', supplementId: 's', doses: 1 }] }],
+      },
+      /has invalid items/,
+    ],
+    [
+      'a bare number as a stored total',
+      { logEntries: [{ ...entry(1), totals: { energy: 185 } }] },
+      /logEntries row 1 has invalid totals/,
+    ],
+    [
+      'a stored total without its missing count',
+      {
+        logEntries: [{ ...entry(1), totals: { energy: { amount: 1, bySource: {} } } }],
+      },
+      /has invalid totals/,
+    ],
+    [
+      'a day naming a meal that is nowhere',
+      { dayTemplates: [day('d', ['ok', 'ghost'])] },
+      /Day template "Day d" names a meal template \(ghost\)/,
+    ],
   ])('refuses %s and writes nothing, even to the other classes', async (_name, bad, message) => {
     await seedLocal()
     const before = await snapshot()
@@ -189,7 +286,7 @@ describe('replaceFromBackup', () => {
     expect(await snapshot()).toEqual(before)
   })
 
-  it('validatePayload accepts a whole, well-formed backup', () => {
-    expect(() => validatePayload(backup())).not.toThrow()
+  it('validatePayload accepts a whole, well-formed backup', async () => {
+    await expect(validatePayload(backup())).resolves.toBeUndefined()
   })
 })

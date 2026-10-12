@@ -134,7 +134,7 @@ async function open() {
 
   try {
     const opened = await decryptBackup(fileText.value, passphrase.value)
-    validatePayload(opened)
+    await validatePayload(opened)
     incoming.value = payloadCounts(opened)
     current.value = await localCounts(Object.keys(incoming.value))
     skipped.value = unknownClasses(opened)

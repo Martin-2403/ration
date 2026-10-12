@@ -12,6 +12,7 @@
 import type { Table } from 'dexie'
 
 import { USER_GOAL_NUTRIENTS } from '../data/nutrients'
+import { SEED_TEMPLATES } from '../data/foods'
 import { db } from '../db'
 import type { BackupClass, BackupPayload, JsonValue } from './envelope'
 
@@ -39,6 +40,48 @@ const isRow = (v: unknown): v is Row => typeof v === 'object' && v !== null && !
 const isText = (v: unknown): v is string => typeof v === 'string'
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
+/**
+ * A nutrient value as §3 stores it: a number and where it came from. An unknown
+ * nutrient is `{ value: 0, source: 'unknown' }`, so a bare number is never a
+ * value. The source is only required to be text, and the nutrient keys are not
+ * matched against this build's registry: a backup from a build that knows more
+ * of either must still restore.
+ */
+const isNutrientValue = (v: unknown): boolean =>
+  isRow(v) && isCount(v.value) && isText(v.source) && (v.at === undefined || isCount(v.at))
+
+const isNutrientMap = (v: unknown): boolean => isRow(v) && Object.values(v).every(isNutrientValue)
+
+/** A stored total: the sum of known contributions, a per-source breakdown, and how many were missing. */
+const isNutrientTotal = (v: unknown): boolean =>
+  isRow(v) && isCount(v.amount) && isCount(v.missing) && isRow(v.bySource)
+
+const isNutrientTotals = (v: unknown): boolean =>
+  isRow(v) && Object.values(v).every(isNutrientTotal)
+
+/** One item of a log entry, by the two kinds of LogItem. */
+function isLogItem(v: unknown): boolean {
+  if (!isRow(v)) return false
+
+  if (v.kind === 'food') {
+    return isText(v.foodId) && isCount(v.grams) && (v.slotId === undefined || isText(v.slotId))
+  }
+
+  if (v.kind === 'supplement') {
+    return isText(v.supplementId) && isCount(v.doses) && typeof v.confirmed === 'boolean'
+  }
+
+  return false
+}
+
+const isMealSlot = (v: unknown): boolean =>
+  isRow(v) &&
+  isText(v.id) &&
+  isText(v.label) &&
+  (v.kind === 'fixed' || v.kind === 'variable') &&
+  Array.isArray(v.options) &&
+  v.options.every(isText)
+
 type KnownClass = 'foods' | 'mealTemplates' | 'dayTemplates' | 'logEntries' | 'goals'
 
 interface ClassSpec {
@@ -57,7 +100,7 @@ const CLASSES: Record<KnownClass, ClassSpec> = {
     check: (row) => {
       if (!isText(row.id) || row.id === '') return 'has no id'
       if (!isText(row.name)) return 'has no name'
-      if (!isRow(row.per100g)) return 'has no nutrient values'
+      if (!isNutrientMap(row.per100g)) return 'has invalid nutrient values'
       if (row.barcode !== undefined && !isText(row.barcode)) return 'has an invalid barcode'
       if (row.servingWeight !== undefined && !isCount(row.servingWeight)) {
         return 'has an invalid serving weight'
@@ -71,7 +114,7 @@ const CLASSES: Record<KnownClass, ClassSpec> = {
     check: (row) => {
       if (!isText(row.id) || row.id === '') return 'has no id'
       if (!isText(row.name)) return 'has no name'
-      if (!Array.isArray(row.slots) || !row.slots.every(isRow)) return 'has invalid slots'
+      if (!Array.isArray(row.slots) || !row.slots.every(isMealSlot)) return 'has invalid slots'
       if (!isCount(row.updatedAt)) return 'has no update time'
     },
   },
@@ -103,8 +146,8 @@ const CLASSES: Record<KnownClass, ClassSpec> = {
       if (!isCount(row.timestamp)) return 'has no time eaten'
       if (!isCount(row.createdAt)) return 'has no creation time'
       if (!isCount(row.updatedAt)) return 'has no update time'
-      if (!Array.isArray(row.items) || !row.items.every(isRow)) return 'has invalid items'
-      if (!isRow(row.totals)) return 'has no totals'
+      if (!Array.isArray(row.items) || !row.items.every(isLogItem)) return 'has invalid items'
+      if (!isNutrientTotals(row.totals)) return 'has invalid totals'
     },
   },
   goals: {
@@ -140,10 +183,48 @@ function rowsOf(payload: BackupPayload, name: KnownClass): JsonValue[] {
 }
 
 /**
- * Checks every row of every restorable class. Throws RestoreError naming the
- * first bad row; returns normally only when the whole payload can be written.
+ * Checks every row of every restorable class, then that every meal a restored
+ * day names can be found. Throws RestoreError naming the first problem; returns
+ * normally only when the whole payload can be written.
  */
-export function validatePayload(payload: BackupPayload): void {
+export async function validatePayload(payload: BackupPayload): Promise<void> {
+  checkRows(payload)
+  await checkMealReferences(payload)
+}
+
+/**
+ * A restored day must not name a meal that cannot be found: it would run with a
+ * gap the user never made. A meal resolves against the backup's own meal
+ * templates when it carries them, otherwise against those on this device, and
+ * always against the seed templates that ship with the app (§13), as
+ * template-lookup does. A log entry's templateId is not checked: entries are
+ * snapshots and read fine after their template is gone.
+ */
+async function checkMealReferences(payload: BackupPayload): Promise<void> {
+  const days = payload.dayTemplates
+  if (days === undefined) return
+
+  const known = new Set<unknown>(SEED_TEMPLATES.map((template) => template.id))
+  const meals =
+    payload.mealTemplates !== undefined
+      ? payload.mealTemplates.map((meal) => (meal as Row).id)
+      : await db.mealTemplates.toCollection().primaryKeys()
+
+  for (const id of meals) known.add(id)
+
+  for (const day of days as Row[]) {
+    const missing = (day.mealTemplateIds as string[]).find((id) => !known.has(id))
+
+    if (missing !== undefined) {
+      throw new RestoreError(
+        'invalid-row',
+        `Day template "${String(day.name)}" names a meal template (${missing}) that is not in the backup or on this device.`,
+      )
+    }
+  }
+}
+
+function checkRows(payload: BackupPayload): void {
   for (const name of RESTORABLE_CLASSES) {
     const rows = payload[name]
     if (rows === undefined) continue
@@ -198,7 +279,7 @@ export async function replaceFromBackup(given: BackupPayload): Promise<ClassCoun
   // state is one. The payload is plain JSON by construction, so a round-trip is safe.
   const payload = JSON.parse(JSON.stringify(given)) as BackupPayload
 
-  validatePayload(payload)
+  await validatePayload(payload)
 
   const names = RESTORABLE_CLASSES.filter((name) => payload[name] !== undefined)
   const tables = names.map((name) => CLASSES[name].table())
