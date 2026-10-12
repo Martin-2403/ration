@@ -10,6 +10,7 @@ import {
   listDayTemplates,
   moveMeal,
   resolveDayTemplate,
+  wrapSingleFood,
 } from '../day-templates'
 import { db, dayTemplates, mealTemplates } from '../db'
 import type { DayTemplate, MealTemplate } from '../types'
@@ -178,5 +179,51 @@ describe('daysUsingMeal', () => {
     const twice = day('twice', 'Twice', ['lunch', 'lunch'])
 
     expect(daysUsingMeal([twice], 'lunch')).toEqual([twice])
+  })
+})
+
+describe('wrapSingleFood', () => {
+  const banana = { id: 'banana', name: ' Banana ' }
+
+  it('makes one fixed slot named after the food, at the amount', () => {
+    const wrapped = wrapSingleFood(banana, 120, [])
+
+    expect(wrapped.name).toBe('Banana')
+    expect(wrapped.slots).toEqual([
+      {
+        id: expect.any(String),
+        label: 'Banana',
+        kind: 'fixed',
+        options: ['banana'],
+        defaultOptionId: 'banana',
+        defaultGrams: 120,
+      },
+    ])
+  })
+
+  it('reuses an untouched wrap of the same food and amount', () => {
+    const first = wrapSingleFood(banana, 120, [])
+
+    expect(wrapSingleFood(banana, 120, [first])).toBe(first)
+  })
+
+  it.each([
+    ['another amount', (m: MealTemplate) => m, 60],
+    ['a renamed meal', (m: MealTemplate) => ({ ...m, name: 'Snack' }), 120],
+    ['an added slot', (m: MealTemplate) => ({ ...m, slots: [...m.slots, ...m.slots] }), 120],
+  ])('does not reuse %s', (_case, change, grams) => {
+    const first = wrapSingleFood(banana, 120, [])
+
+    expect(wrapSingleFood(banana, grams, [change(first)]).id).not.toBe(first.id)
+  })
+
+  it('resolves through a day like any stored meal', async () => {
+    const wrapped = wrapSingleFood(banana, 120, [])
+    await mealTemplates.put(wrapped)
+
+    const resolved = await resolveDayTemplate(day('d', 'Snacks', [wrapped.id]))
+
+    expect(resolved.missing).toEqual([])
+    expect(resolved.meals[0]!.template).toEqual(wrapped)
   })
 })

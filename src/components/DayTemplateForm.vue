@@ -10,13 +10,19 @@
  *
  * Meals come from listMealTemplates, so seeds and anything the user built
  * (#96) are equally available.
+ *
+ * "Add a single food" wraps a food in a one-slot meal (#120, wrapSingleFood).
+ * Those meals are held here as `created` and only written when the day is
+ * saved, so cancelling — or removing the row again — leaves nothing orphaned
+ * in the "A meal" list.
  */
 import { computed, onMounted, ref } from 'vue'
 
-import { dayTemplates } from '../db'
-import { moveMeal } from '../day-templates'
+import { dayTemplates, mealTemplates } from '../db'
+import { moveMeal, wrapSingleFood } from '../day-templates'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
-import type { DayTemplate } from '../types'
+import type { DayTemplate, Food, MealTemplate } from '../types'
+import SingleFoodStep from './SingleFoodStep.vue'
 
 const { draft, existing } = defineProps<{
   /** A saved day to correct, a clone to start from, or nothing at all. */
@@ -64,8 +70,36 @@ onMounted(async () => {
   adding.value = available.value[0]?.template.id ?? ''
 })
 
+/** One-slot meals made here and not yet stored; see the header. */
+const created = ref<MealTemplate[]>([])
+
+/** True while the single-food step stands in for the form. */
+const addingSingle = ref(false)
+
+function addSingle(food: Food, grams: number) {
+  const meal = wrapSingleFood(food, grams, [
+    ...available.value.map((match) => match.template),
+    ...created.value,
+  ])
+
+  // A reused meal is already stored or already pending; only a new one is held.
+  const known =
+    available.value.some((match) => match.template.id === meal.id) ||
+    created.value.some((pending) => pending.id === meal.id)
+  if (!known) created.value.push(meal)
+
+  meals.value.push(meal.id)
+  addingSingle.value = false
+}
+
 const names = computed(
-  () => new Map(available.value.map((match) => [match.template.id, match.template.name])),
+  () =>
+    new Map(
+      [...available.value.map((match) => match.template), ...created.value].map((template) => [
+        template.id,
+        template.name,
+      ]),
+    ),
 )
 
 /**
@@ -103,6 +137,13 @@ async function save() {
   }
 
   try {
+    // Only the wrapped foods the day still uses, and before the day itself so
+    // a day is never stored naming a meal that failed to write. put is
+    // idempotent, so a retry after a failure is safe.
+    for (const meal of created.value.filter((m) => template.mealTemplateIds.includes(m.id))) {
+      await mealTemplates.put(meal)
+    }
+
     await dayTemplates.put(template)
     // Split rather than a computed event name: the emit overloads are typed
     // per event, so a union of the two names satisfies neither.
@@ -115,7 +156,9 @@ async function save() {
 </script>
 
 <template>
-  <section class="card">
+  <SingleFoodStep v-if="addingSingle" @add="addSingle" @back="addingSingle = false" />
+
+  <section v-else class="card">
     <p class="hint">
       A day is the meals you normally eat together. Running it walks each one through the usual
       builder, so the amounts are still yours to confirm.
@@ -171,6 +214,13 @@ async function save() {
         </select>
         <button type="button" class="ghost small" :disabled="!adding" @click="add">Add meal</button>
       </span>
+    </div>
+
+    <div class="row">
+      <span />
+      <button type="button" class="ghost small single" @click="addingSingle = true">
+        Add a single food
+      </button>
     </div>
 
     <div class="footer">
@@ -321,6 +371,10 @@ button:disabled {
   color: var(--ink);
   background: none;
   border-color: var(--ink-soft);
+}
+
+.single {
+  justify-self: start;
 }
 
 .small {
