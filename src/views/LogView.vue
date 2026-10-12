@@ -13,6 +13,7 @@
 import { Copy, Pencil, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 
+import { useStepHistory } from '../composables/useStepHistory'
 import DayRunner from '../components/DayRunner.vue'
 import DayTemplateForm from '../components/DayTemplateForm.vue'
 import FoodForm from '../components/FoodForm.vue'
@@ -223,6 +224,23 @@ function goBack() {
     choice.value = undefined
   }
 }
+
+/**
+ * How many steps deep `choice` is: the options, one in, then a list's item or
+ * form. Only used to keep browser history in step with the view (#119); it
+ * mirrors what `goBack` reverses and does not change how `choice` is modelled.
+ */
+const depth = computed(() => {
+  const current = choice.value
+
+  if (!current) return 0
+  if (current.kind === 'variation') return current.source ? 2 : 1
+  if (['template', 'meal-form', 'day', 'day-form'].includes(current.kind)) return 2
+
+  return 1
+})
+
+useStepHistory(() => depth.value, goBack)
 
 /**
  * A count and the first couple of names. Naming them all would reintroduce the
