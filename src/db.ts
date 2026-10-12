@@ -69,9 +69,10 @@ db.version(3).stores({
 
 // Foods, meal templates and day templates gain `updatedAt` for §10's
 // last-write-wins merge (#142). The rows have no createdAt to inherit it from, so
-// every existing row takes the migration time: an honest "no later than now",
-// which loses to any backup row stamped by a real edit afterwards and wins over
-// nothing it should not.
+// every existing row takes the migration time. That is acceptable for a first
+// release with one device, but it is not neutral: on a restore from another
+// device, a migrated row can beat a real earlier edit made there, because the
+// migration time is later than that edit.
 //
 // No index on `updatedAt`, so no store is re-declared: the merge reads whole
 // tables and compares in memory, as the lists here already do. `logEntries`
@@ -105,10 +106,51 @@ function plain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+/** Structural equality for plain JSON data (objects, arrays, primitives). */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((key) => key in right && sameJson(left[key], right[key]))
+  )
+}
+
+/**
+ * The row to write: `next` stamped with the write time, unless the stored row
+ * already holds the same content, in which case it keeps its own stamp.
+ *
+ * A write that changes nothing must not look like an edit to §10's merge —
+ * logging a food re-puts it every time, and a bumped stamp would let a stale
+ * copy on another device beat a real correction there.
+ */
+function stamped<T extends { updatedAt: number }>(
+  next: Omit<T, 'updatedAt'>,
+  existing: T | undefined,
+): T {
+  // A stored row passed straight back carries its old stamp; it is not content.
+  const row = plain(next) as Omit<T, 'updatedAt'> & { updatedAt?: number }
+  delete row.updatedAt
+
+  if (existing) {
+    const { updatedAt, ...content } = existing
+
+    if (sameJson(content, row)) return { ...row, updatedAt } as T
+  }
+
+  return { ...row, updatedAt: Date.now() } as T
+}
+
 export interface FoodRepository {
   get(id: string): Promise<Food | undefined>
   findByBarcode(barcode: string): Promise<Food | undefined>
-  /** Upsert, stamping updatedAt. The resolver writes back whatever it resolved (§4). */
+  /** Upsert, stamping updatedAt when the content is new or changed. The resolver writes back whatever it resolved (§4). */
   put(food: NewFood): Promise<void>
   /**
    * Every stored food, for searching by name (#40).
@@ -125,7 +167,7 @@ export interface FoodRepository {
 export interface MealTemplateRepository {
   list(): Promise<MealTemplate[]>
   get(id: string): Promise<MealTemplate | undefined>
-  /** Upsert, stamping updatedAt. */
+  /** Upsert, stamping updatedAt when the content is new or changed. */
   put(template: NewMealTemplate): Promise<void>
   remove(id: string): Promise<void>
 }
@@ -133,7 +175,7 @@ export interface MealTemplateRepository {
 export interface DayTemplateRepository {
   list(): Promise<DayTemplate[]>
   get(id: string): Promise<DayTemplate | undefined>
-  /** Upsert, stamping updatedAt. Rejects a day that has no name or names no meals. */
+  /** Upsert, stamping updatedAt when the content is new or changed. Rejects a day that has no name or names no meals. */
   put(template: NewDayTemplate): Promise<void>
   remove(id: string): Promise<void>
 }
@@ -161,7 +203,7 @@ export const foods: FoodRepository = {
   get: (id) => db.foods.get(id),
   findByBarcode: (barcode) => db.foods.where('barcode').equals(barcode).first(),
   async put(food) {
-    await db.foods.put(plain({ ...food, updatedAt: Date.now() }))
+    await db.foods.put(stamped(food, await db.foods.get(food.id)))
   },
   all: () => db.foods.toArray(),
 }
@@ -170,7 +212,7 @@ export const mealTemplates: MealTemplateRepository = {
   list: () => db.mealTemplates.toArray(),
   get: (id) => db.mealTemplates.get(id),
   async put(template) {
-    await db.mealTemplates.put(plain({ ...template, updatedAt: Date.now() }))
+    await db.mealTemplates.put(stamped(template, await db.mealTemplates.get(template.id)))
   },
   async remove(id) {
     await db.mealTemplates.delete(id)
@@ -194,7 +236,7 @@ export const dayTemplates: DayTemplateRepository = {
       throw new Error(`day template ${template.id} names no meals`)
     }
 
-    await db.dayTemplates.put(plain({ ...template, updatedAt: Date.now() }))
+    await db.dayTemplates.put(stamped(template, await db.dayTemplates.get(template.id)))
   },
 
   async remove(id) {
