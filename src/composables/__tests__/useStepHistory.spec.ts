@@ -30,7 +30,7 @@ const step = () => history.state?.rationStep ?? 0
 
 /** Unwind whatever a previous test left, so each starts on a clean entry. */
 async function reset() {
-  while (history.state?.rationStep) {
+  for (let i = 0; i < 5 && history.state?.rationStep; i++) {
     history.back()
     await settle()
   }
@@ -151,5 +151,34 @@ describe('useStepHistory', () => {
     await settle()
 
     expect(backs.value).toBe(0)
+  })
+
+  it('keeps pushing after a rewind that had nowhere to go', async () => {
+    // A leftover claiming more entries below than exist: go(-n) is a no-op and
+    // fires no popstate, so nothing would otherwise clear `rewinding`.
+    history.replaceState({ position: 7, current: '/log', rationStep: 99 }, '')
+    const wrapper = mountHost()
+    await settle()
+
+    // Longer than the fallback that stands in for the popstate that never comes.
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    depth.value = 1
+    await settle()
+
+    expect(step()).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('calls onBack once per entry a single popstate consumed', async () => {
+    const wrapper = mountHost()
+    depth.value = 2
+    await flushPromises()
+
+    history.go(-2)
+    await settle()
+
+    expect(depth.value).toBe(0)
+    expect(backs.value).toBe(2)
+    wrapper.unmount()
   })
 })

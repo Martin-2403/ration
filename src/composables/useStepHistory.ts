@@ -31,9 +31,23 @@ export function useStepHistory(depth: () => number, onBack: () => void) {
   /** A `history.go` is in flight; its popstate is ours and must not be read as a gesture. */
   let rewinding = false
 
+  let rewindTimer: ReturnType<typeof setTimeout> | undefined
+
+  function settleRewind() {
+    clearTimeout(rewindTimer)
+    rewinding = false
+    reconcile()
+  }
+
   function rewind(by: number) {
     rewinding = true
     history.go(-by)
+    // history.go past the oldest entry is a no-op and fires no popstate, which
+    // would leave `rewinding` set for good and the view unable to push again.
+    // A real traversal reports back within a task or two; this only ever fires
+    // when it never will.
+    clearTimeout(rewindTimer)
+    rewindTimer = setTimeout(settleRewind, 150)
   }
 
   function reconcile() {
@@ -58,8 +72,7 @@ export function useStepHistory(depth: () => number, onBack: () => void) {
 
   function onPopState(event: PopStateEvent) {
     if (rewinding) {
-      rewinding = false
-      reconcile()
+      settleRewind()
       return
     }
 
@@ -74,8 +87,11 @@ export function useStepHistory(depth: () => number, onBack: () => void) {
 
     if (step < stacked) {
       // A gesture or browser back consumed one entry. Do what the button does.
+      // One popstate can consume several entries (history.go(-n), a long-press
+      // back menu), and each was a step the user is leaving.
+      const consumed = stacked - step
       stacked = step
-      onBack()
+      for (let i = 0; i < consumed; i++) onBack()
       reconcile()
     }
     // step === stacked === 0: the route itself is being left, nothing to do.
@@ -91,7 +107,10 @@ export function useStepHistory(depth: () => number, onBack: () => void) {
     if (leftover > 0) rewind(leftover)
   })
 
-  onBeforeUnmount(() => window.removeEventListener('popstate', onPopState))
+  onBeforeUnmount(() => {
+    window.removeEventListener('popstate', onPopState)
+    clearTimeout(rewindTimer)
+  })
 
   watch(depth, reconcile)
 }

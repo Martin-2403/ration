@@ -201,6 +201,48 @@ describe('LogView', () => {
     await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
   })
 
+  const stepOf = () => history.state?.rationStep ?? 0
+
+  it('steps back through the day path one browser back at a time (#119)', async () => {
+    const wrapper = await render()
+    await openDays(wrapper)
+    await optionNamed(wrapper, 'Build a day').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    history.back()
+    await vi.waitFor(() => expect(optionNamed(wrapper, 'Build a day')).toBeDefined())
+    expect(stepOf()).toBe(1)
+
+    history.back()
+    await vi.waitFor(() => expect(wrapper.find('.back').exists()).toBe(false))
+    expect(stepOf()).toBe(0)
+  })
+
+  it('leaves no entries behind when finish() resets two levels at once (#119)', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Porridge').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('.back').exists()).toBe(false))
+    await vi.waitFor(() => expect(stepOf()).toBe(0))
+  })
+
+  it('consumes the entry when a form is cancelled (#119)', async () => {
+    const wrapper = await render()
+    await openMeals(wrapper)
+    await optionNamed(wrapper, 'Build a meal').trigger('click')
+    await flushPromises()
+    expect(stepOf()).toBe(2)
+
+    await buttonNamed(wrapper, 'Cancel').trigger('click')
+    await vi.waitFor(() => expect(stepOf()).toBe(1))
+    expect(optionNamed(wrapper, 'Build a meal')).toBeDefined()
+  })
+
   it('logs a meal against today at the time of the write', async () => {
     const wrapper = await render()
     await openMeals(wrapper)
