@@ -19,6 +19,7 @@ import {
   type NewUserGoal,
   type UserGoal,
 } from './data/nutrients'
+import { requestPersistence } from './storage-persistence'
 import type {
   DayTemplate,
   Food,
@@ -104,6 +105,16 @@ export { db }
  */
 function plain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+/**
+ * The first user write asks the browser for persistent storage (§10). It is
+ * fire-and-forget on purpose: requestPersistence never rejects, and a refusal
+ * or a missing API must not hold up or fail the write. The food cache is not
+ * a user write — the resolver fills it — so it stays out.
+ */
+function noteUserWrite(): void {
+  void requestPersistence()
 }
 
 /** Structural equality for plain JSON data (objects, arrays, primitives). */
@@ -212,6 +223,7 @@ export const mealTemplates: MealTemplateRepository = {
   list: () => db.mealTemplates.toArray(),
   get: (id) => db.mealTemplates.get(id),
   async put(template) {
+    noteUserWrite()
     await db.mealTemplates.put(stamped(template, await db.mealTemplates.get(template.id)))
   },
   async remove(id) {
@@ -236,6 +248,7 @@ export const dayTemplates: DayTemplateRepository = {
       throw new Error(`day template ${template.id} names no meals`)
     }
 
+    noteUserWrite()
     await db.dayTemplates.put(stamped(template, await db.dayTemplates.get(template.id)))
   },
 
@@ -248,11 +261,13 @@ export const log: LogRepository = {
   // The repository stamps both timestamps rather than trusting callers: §10's
   // merge is only correct if updatedAt is always the real write time.
   add(entry) {
+    noteUserWrite()
     const at = Date.now()
     return db.logEntries.add(plain({ ...entry, createdAt: at, updatedAt: at }))
   },
 
   async update(entry) {
+    noteUserWrite()
     await db.logEntries.put(plain({ ...entry, updatedAt: Date.now() }))
   },
 
@@ -284,6 +299,7 @@ export const nutrientGoals: NutrientGoalRepository = {
       throw new RangeError(`a goal target must be a positive number, got ${goal.target}`)
     }
 
+    noteUserWrite()
     await db.nutrientGoals.put(plain({ ...goal, updatedAt: Date.now() }))
   },
 
