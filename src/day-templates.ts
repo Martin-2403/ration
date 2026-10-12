@@ -102,3 +102,59 @@ export function moveMeal(ids: readonly string[], from: number, to: number): stri
 
   return moved
 }
+
+/**
+ * The one-slot meal that stands for "just this food" in a day (#120).
+ *
+ * A day only names meals, so a single food is wrapped rather than the data
+ * model widened: it then runs through the ordinary builder like any other meal.
+ *
+ * Re-adding the same food at the same amount REUSES a meal already wrapped that
+ * way instead of minting a twin. Meals are shared by id on purpose (§7), so two
+ * days both saying "Banana, 120 g" share one meal and the "A meal" list does not
+ * fill with identical rows. Only an untouched wrap matches — one fixed slot, one
+ * option, the food's own name on both meal and slot — so a meal the user has
+ * since renamed or reshaped is never silently captured. A different amount is a
+ * different meal, because the amount is the meal's default.
+ *
+ * Pure and does not write: the caller decides when it is persisted.
+ */
+export function wrapSingleFood(
+  food: { id: string; name: string },
+  grams: number,
+  known: readonly MealTemplate[],
+): MealTemplate {
+  const name = food.name.trim()
+
+  const reusable = known.find(({ name: mealName, slots }) => {
+    const slot = slots[0]
+
+    return (
+      mealName === name &&
+      slots.length === 1 &&
+      slot!.kind === 'fixed' &&
+      slot!.label === name &&
+      slot!.options.length === 1 &&
+      slot!.options[0] === food.id &&
+      slot!.defaultOptionId === food.id &&
+      slot!.defaultGrams === grams
+    )
+  })
+
+  if (reusable) return reusable
+
+  return {
+    id: crypto.randomUUID(),
+    name,
+    slots: [
+      {
+        id: crypto.randomUUID(),
+        label: name,
+        kind: 'fixed',
+        options: [food.id],
+        defaultOptionId: food.id,
+        defaultGrams: grams,
+      },
+    ],
+  }
+}

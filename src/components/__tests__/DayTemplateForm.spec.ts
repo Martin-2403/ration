@@ -4,8 +4,12 @@ import 'fake-indexeddb/auto'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createPinia, setActivePinia } from 'pinia'
+
 import { db, dayTemplates, mealTemplates } from '../../db'
 import type { DayTemplate, MealTemplate } from '../../types'
+import { listMealTemplates } from '../../template-lookup'
+import DayRunner from '../DayRunner.vue'
 import DayTemplateForm from '../DayTemplateForm.vue'
 
 const meal = (id: string, name: string): MealTemplate => ({
@@ -43,6 +47,9 @@ const addMeal = async (wrapper: Wrapper, id: string) => {
   await wrapper.find('#day-add-meal').setValue(id)
   await buttonNamed(wrapper, 'Add meal').trigger('click')
 }
+
+/** The first meal the dropdown offers, so a day can be saved without the food. */
+const listFirstId = async () => (await listMealTemplates())[0]?.template.id
 
 const order = (wrapper: Wrapper) => wrapper.findAll('.meal-name').map((row) => row.text())
 
@@ -214,5 +221,115 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await vi.waitFor(() => expect(wrapper.emitted('saved')).toHaveLength(1))
 
     expect(wrapper.emitted('updated')).toBeUndefined()
+  })
+
+  describe('Add a single food', () => {
+    /** Walks the picker and the amount step for a seeded food. */
+    const addSingle = async (wrapper: Wrapper, foodName: string, grams: string) => {
+      await buttonNamed(wrapper, 'Add a single food').trigger('click')
+      await flushPromises()
+      await wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes(foodName))!
+        .trigger('click')
+      await flushPromises()
+      await wrapper.find('#single-grams').setValue(grams)
+      await buttonNamed(wrapper, 'Add to the day').trigger('click')
+    }
+
+    const save = async (wrapper: Wrapper) => {
+      await wrapper.find('#day-name').setValue('Snack day')
+      await buttonNamed(wrapper, 'Save the day').trigger('click')
+      await vi.waitFor(() => expect(wrapper.emitted('saved')).toHaveLength(1))
+    }
+
+    beforeEach(async () => {
+      await db.foods.clear()
+      setActivePinia(createPinia())
+    })
+
+    it('stores a one-slot meal named after the food, and the day names it', async () => {
+      const wrapper = await render()
+      await addSingle(wrapper, 'Banana', '120')
+      await save(wrapper)
+
+      const [stored] = await db.mealTemplates.toArray()
+      expect(stored).toMatchObject({
+        name: 'Banana',
+        slots: [{ label: 'Banana', kind: 'fixed', defaultGrams: 120 }],
+      })
+      expect(stored!.slots).toHaveLength(1)
+      expect(stored!.slots[0]!.options).toEqual([stored!.slots[0]!.defaultOptionId])
+
+      const [day] = await db.dayTemplates.toArray()
+      expect(day!.mealTemplateIds).toEqual([stored!.id])
+    })
+
+    it('runs through DayRunner like any other meal, at the chosen amount', async () => {
+      const wrapper = await render()
+      await addSingle(wrapper, 'Banana', '120')
+      await save(wrapper)
+
+      const [day] = await db.dayTemplates.toArray()
+      const runner = mount(DayRunner, { props: { template: day! } })
+      await flushPromises()
+
+      expect(runner.text()).toContain('Meal 1 of 1')
+      expect(runner.text()).toContain('Banana')
+      expect((runner.find('input[inputmode="decimal"]').element as HTMLInputElement).value).toBe(
+        '120',
+      )
+    })
+
+    it('reuses the same food at the same amount, but not at another', async () => {
+      const wrapper = await render()
+      await addSingle(wrapper, 'Banana', '120')
+      await addSingle(wrapper, 'Banana', '120')
+      await addSingle(wrapper, 'Banana', '60')
+      await save(wrapper)
+
+      const [day] = await db.dayTemplates.toArray()
+      expect(day!.mealTemplateIds).toHaveLength(3)
+      expect(day!.mealTemplateIds[0]).toBe(day!.mealTemplateIds[1])
+      expect(new Set(day!.mealTemplateIds).size).toBe(2)
+      expect(await db.mealTemplates.count()).toBe(2)
+    })
+
+    it('stores nothing when the day is cancelled', async () => {
+      const wrapper = await render()
+      await addSingle(wrapper, 'Banana', '120')
+      await buttonNamed(wrapper, 'Cancel').trigger('click')
+
+      expect(wrapper.emitted('cancel')).toHaveLength(1)
+      expect(await db.mealTemplates.count()).toBe(0)
+    })
+
+    it('does not store a food that was removed from the day again', async () => {
+      const wrapper = await render()
+      await addSingle(wrapper, 'Banana', '120')
+      await labelled(wrapper, 'Remove Banana').trigger('click')
+      await addMeal(wrapper, (await listFirstId())!)
+      await save(wrapper)
+
+      expect(await db.mealTemplates.count()).toBe(0)
+    })
+
+    it('accepts a decimal comma and refuses zero', async () => {
+      const wrapper = await render()
+      await buttonNamed(wrapper, 'Add a single food').trigger('click')
+      await flushPromises()
+      await wrapper.find('.results button').trigger('click')
+      await flushPromises()
+
+      await wrapper.find('#single-grams').setValue('0')
+      expect(buttonNamed(wrapper, 'Add to the day').attributes('disabled')).toBeDefined()
+
+      await wrapper.find('#single-grams').setValue('12,5')
+      expect(buttonNamed(wrapper, 'Add to the day').attributes('disabled')).toBeUndefined()
+      await buttonNamed(wrapper, 'Add to the day').trigger('click')
+      await save(wrapper)
+
+      expect((await db.mealTemplates.toArray())[0]!.slots[0]!.defaultGrams).toBe(12.5)
+    })
   })
 })
