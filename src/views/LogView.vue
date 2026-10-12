@@ -26,7 +26,7 @@ import { localMiddayFromISODate, toISODate } from '../dates'
 import { cloneDayTemplate, daysUsingMeal, listDayTemplates } from '../day-templates'
 import { useLogStore } from '../stores/log'
 import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
-import type { DayTemplate, Food, MealTemplate } from '../types'
+import type { DayTemplate, Food, NewDayTemplate, NewFood, NewMealTemplate } from '../types'
 
 const store = useLogStore()
 
@@ -61,15 +61,15 @@ const date = ref(toISODate())
 const today = toISODate()
 
 const choice = ref<
-  | { kind: 'template'; template: MealTemplate }
+  | { kind: 'template'; template: NewMealTemplate }
   /** The saved days, one step in, and then one of them running (#52). */
   | { kind: 'days' }
-  | { kind: 'day'; template: DayTemplate }
+  | { kind: 'day'; template: NewDayTemplate }
   /**
    * The day form: nothing to build one, a clone to start from, or a saved day
    * to correct in place (#101).
    */
-  | { kind: 'day-form'; draft?: DayTemplate; existing?: boolean }
+  | { kind: 'day-form'; draft?: NewDayTemplate; existing?: boolean }
   | { kind: 'food' }
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
@@ -77,7 +77,7 @@ const choice = ref<
   /** The list of saved meals, one step in from the options (#98). */
   | { kind: 'meals' }
   /** The meal form: building one (#96), or correcting a saved one (#101). */
-  | { kind: 'meal-form'; draft?: MealTemplate }
+  | { kind: 'meal-form'; draft?: NewMealTemplate }
   | undefined
 >()
 /**
@@ -112,7 +112,7 @@ function finish(what: string, logged = true) {
  * someone who just described a meal is describing it because they are eating
  * it, and the list would make them find it again.
  */
-async function savedTemplate(template: MealTemplate) {
+async function savedTemplate(template: NewMealTemplate) {
   await loadTemplates()
   choice.value = { kind: 'template', template }
 }
@@ -144,7 +144,7 @@ function finishDay(count: number) {
 }
 
 /** Same reasoning for a day: whoever just described one is about to eat it. */
-async function savedDay(template: DayTemplate) {
+async function savedDay(template: NewDayTemplate) {
   await loadDays()
   choice.value = { kind: 'day', template }
 }
@@ -274,7 +274,7 @@ const daysSummary = computed(() =>
  */
 const writing = ref(false)
 
-async function logFood(food: Food, grams: number) {
+async function logFood(food: NewFood, grams: number) {
   if (!validDate.value || writing.value) return
 
   writing.value = true

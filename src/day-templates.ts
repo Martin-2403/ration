@@ -13,7 +13,7 @@
  */
 import { dayTemplates } from './db'
 import { findMealTemplate } from './template-lookup'
-import type { DayTemplate, MealTemplate } from './types'
+import type { DayTemplate, MealTemplate, NewDayTemplate, NewMealTemplate } from './types'
 
 /** One meal of a day, and whatever its id resolved to. */
 export interface ResolvedMeal {
@@ -36,7 +36,7 @@ export interface ResolvedDayTemplate {
  * one in a ref for the days screen, and re-querying Dexie for something the
  * caller already has would be a second source of the same truth (#101).
  */
-export function daysUsingMeal(days: readonly DayTemplate[], mealId: string): DayTemplate[] {
+export function daysUsingMeal<T extends NewDayTemplate>(days: readonly T[], mealId: string): T[] {
   return days.filter((day) => day.mealTemplateIds.includes(mealId))
 }
 
@@ -59,7 +59,7 @@ export function findDayTemplate(id: string): Promise<DayTemplate | undefined> {
  * complete, which is the same failure as rendering an unknown nutrient as zero
  * (§3). The caller decides whether to offer the rest or refuse the day.
  */
-export async function resolveDayTemplate(template: DayTemplate): Promise<ResolvedDayTemplate> {
+export async function resolveDayTemplate(template: NewDayTemplate): Promise<ResolvedDayTemplate> {
   const meals = await Promise.all(
     template.mealTemplateIds.map(async (id) => ({ id, template: await findMealTemplate(id) })),
   )
@@ -76,7 +76,7 @@ export async function resolveDayTemplate(template: DayTemplate): Promise<Resolve
  * them: correcting porridge corrects it in both days. Only the name and the
  * order are the clone's own.
  */
-export function cloneDayTemplate(original: DayTemplate, name: string): DayTemplate {
+export function cloneDayTemplate(original: NewDayTemplate, name: string): NewDayTemplate {
   return {
     id: crypto.randomUUID(),
     name: name.trim(),
@@ -122,8 +122,8 @@ export function moveMeal(ids: readonly string[], from: number, to: number): stri
 export function wrapSingleFood(
   food: { id: string; name: string },
   grams: number,
-  known: readonly MealTemplate[],
-): MealTemplate {
+  known: readonly NewMealTemplate[],
+): NewMealTemplate {
   const name = food.name.trim()
 
   const reusable = known.find(({ name: mealName, slots }) => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { DECLARATION_NUTRIENTS, NUTRIENTS, type NutrientKey } from '../data/nutrients'
-import type { Food } from '../types'
+import type { NewFood } from '../types'
 import { buildUserFood, reviseFood } from '../user-food'
 
 describe('buildUserFood', () => {
@@ -90,7 +90,7 @@ describe('buildUserFood', () => {
  * depends on whether that value actually carried over.
  */
 describe('reviseFood', () => {
-  const original: Food = {
+  const original: NewFood = {
     id: 'yoghurt',
     name: 'Yoghurt, 3.5%',
     per100g: {
@@ -103,7 +103,7 @@ describe('reviseFood', () => {
     },
   }
 
-  const values = (food: Food) => food.per100g
+  const values = (food: NewFood) => food.per100g
 
   it('keeps the original source for a value that carried over unchanged', () => {
     const revised = reviseFood(original, {
@@ -118,7 +118,7 @@ describe('reviseFood', () => {
     expect(values(revised).protein).toEqual({ value: 3.6, source: 'off-packaging' })
   })
 
-  it('retags an edited value as the user\'s own', () => {
+  it("retags an edited value as the user's own", () => {
     const revised = reviseFood(original, {
       name: 'Yoghurt, 0.1%',
       asked: DECLARATION_NUTRIENTS,
@@ -195,7 +195,7 @@ describe('reviseFood', () => {
   })
 
   it('leaves alone a nutrient the surface never asked about', () => {
-    const resolved: Food = {
+    const resolved: NewFood = {
       id: 'bar',
       name: 'Cereal bar',
       per100g: {
@@ -218,8 +218,6 @@ describe('reviseFood', () => {
   })
 
   it('trims the name', () => {
-    expect(reviseFood(original, { name: '  Kefir  ', asked: [], per100g: {} }).name).toBe(
-      'Kefir',
-    )
+    expect(reviseFood(original, { name: '  Kefir  ', asked: [], per100g: {} }).name).toBe('Kefir')
   })
 })
