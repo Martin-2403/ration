@@ -43,11 +43,18 @@ describe('readPersistence', () => {
     expect(await readPersistence()).toBe(expected)
   })
 
-  it('reports refused once we asked and persisted() still says no', async () => {
+  it('reports refused once this session asked and was declined', async () => {
     stubStorage({ persisted: async () => false, persist: async () => false })
     await requestPersistence()
 
     expect(await readPersistence()).toBe('refused')
+  })
+
+  it('reports not-asked, not refused, when an earlier grant is no longer in effect', async () => {
+    // Nothing was asked this session, so a lost grant must not read as a refusal.
+    stubStorage({ persisted: async () => false })
+
+    expect(await readPersistence()).toBe('not-asked')
   })
 })
 
@@ -62,15 +69,16 @@ describe('requestPersistence', () => {
     expect(persist).toHaveBeenCalledTimes(1)
   })
 
-  it('does not ask again in a later session once it has an answer', async () => {
+  it('retries a refusal in a later session, and reads not-asked until then', async () => {
     const persist = vi.fn(async () => false)
     stubStorage({ persisted: async () => false, persist })
     await requestPersistence()
 
     resetPersistenceSession()
+    expect(await readPersistence()).toBe('not-asked')
     await requestPersistence()
 
-    expect(persist).toHaveBeenCalledTimes(1)
+    expect(persist).toHaveBeenCalledTimes(2)
   })
 
   it('does not ask when the browser already reports persistent storage', async () => {

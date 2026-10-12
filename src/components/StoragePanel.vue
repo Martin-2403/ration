@@ -30,9 +30,9 @@ const persistenceText = computed(() => {
     case 'granted':
       return 'The browser has agreed to keep this app’s data. That is not a guarantee, so a backup is still worth having.'
     case 'refused':
-      return 'The browser declined to mark this app’s data as persistent. It may be cleared if the device runs low on space.'
+      return 'The browser declined to mark this app’s data as persistent. Ration asks again next session. Until then it may be cleared if the device runs low on space.'
     case 'not-asked':
-      return 'Not asked yet. Ration asks the browser the first time you save something.'
+      return 'Not in effect yet. Ration asks the browser when you save something, once per session.'
     case 'unsupported':
       return 'This browser does not say whether the data is persistent.'
     default:

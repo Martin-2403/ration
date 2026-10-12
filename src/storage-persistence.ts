@@ -14,7 +14,7 @@
 export type PersistenceState =
   /** `persisted()` reports true. */
   | 'granted'
-  /** We asked and the browser declined (or `persisted()` still says no). */
+  /** We asked this session and the browser declined. */
   | 'refused'
   /** Supported, but no write has asked yet. */
   | 'not-asked'
@@ -29,35 +29,15 @@ export interface StorageEstimate {
 }
 
 /**
- * Whether we have asked before, so a later session does not ask again.
- *
- * localStorage rather than a Dexie row: it is synchronous, needs no schema
- * version, and a write to Dexie from inside the first Dexie write would be
- * circular. It is evictable along with IndexedDB, but it only caches the
- * answer — `persisted()` stays the source of truth and is always re-read, so
- * losing the flag costs one more `persist()` call, which is harmless.
+ * Nothing is persisted about the answer, on purpose. A grant is always visible
+ * through `persisted()`, which is the source of truth, so caching it would only
+ * add a second copy that can disagree. A refusal must not be cached at all:
+ * Chrome decides from engagement, and the first write is at near-zero
+ * engagement, so a later session may be granted what this one was refused
+ * (web.dev, see the research on #8). The refusal is remembered for this session
+ * only, to keep the panel honest and to ask once per session.
  */
-const ASKED_KEY = 'ration.persist-asked'
-
-type Asked = 'granted' | 'refused'
-
-function remembered(): Asked | undefined {
-  try {
-    const value = localStorage.getItem(ASKED_KEY)
-
-    return value === 'granted' || value === 'refused' ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function remember(outcome: Asked): void {
-  try {
-    localStorage.setItem(ASKED_KEY, outcome)
-  } catch {
-    // Private mode or a full disk: we just ask again next session.
-  }
-}
+let refusedThisSession = false
 
 const storage = (): StorageManager | undefined =>
   typeof navigator === 'undefined' ? undefined : navigator.storage
@@ -68,11 +48,13 @@ let requested: Promise<void> | undefined
 /** Test seam: forget this session's request. */
 export function resetPersistenceSession(): void {
   requested = undefined
+  refusedThisSession = false
 }
 
 /**
- * Asks for persistent storage at most once per session, and not at all once an
- * earlier session has asked. Never rejects.
+ * Asks for persistent storage at most once per session, and not at all when the
+ * browser already reports it persistent. A refusal is retried next session.
+ * Never rejects.
  *
  * Called from the first user write, not at page load: Chrome decides from
  * engagement and Safari from heuristics such as being installed, so asking
@@ -88,23 +70,21 @@ async function ask(): Promise<void> {
   try {
     const manager = storage()
     if (!manager || typeof manager.persist !== 'function') return
-    if (remembered()) return
 
-    // Already persistent (e.g. installed): nothing to ask, but note it.
-    if (typeof manager.persisted === 'function' && (await manager.persisted())) {
-      remember('granted')
+    // Already persistent (e.g. installed): nothing to ask.
+    if (typeof manager.persisted === 'function' && (await manager.persisted())) return
 
-      return
-    }
-
-    remember((await manager.persist()) ? 'granted' : 'refused')
+    refusedThisSession = !(await manager.persist())
   } catch {
-    // A rejected request is not an answer, so nothing is remembered and the
-    // next session tries again.
+    // A rejected request is not an answer; the next session tries again.
   }
 }
 
-/** What the browser says now, falling back to what we remember of asking. */
+/**
+ * What the browser says now. 'refused' only describes this session's request:
+ * a grant that is no longer in effect, or a refusal from an earlier session,
+ * reads as 'not-asked', because the next write asks again.
+ */
 export async function readPersistence(): Promise<PersistenceState> {
   const manager = storage()
   if (!manager || typeof manager.persisted !== 'function') return 'unsupported'
@@ -115,7 +95,7 @@ export async function readPersistence(): Promise<PersistenceState> {
     return 'unsupported'
   }
 
-  return remembered() === undefined ? 'not-asked' : 'refused'
+  return refusedThisSession ? 'refused' : 'not-asked'
 }
 
 /** Rough usage and quota, or undefined when the browser will not say. */

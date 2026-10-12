@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { resetPersistenceSession } from '../../storage-persistence'
+import { requestPersistence, resetPersistenceSession } from '../../storage-persistence'
 import StoragePanel from '../StoragePanel.vue'
 
 const render = async (storage: Partial<StorageManager> | undefined, standalone = false) => {
@@ -33,8 +33,10 @@ describe('StoragePanel', () => {
   })
 
   it('says refused after a refusal', async () => {
-    localStorage.setItem('ration.persist-asked', 'refused')
-    const wrapper = await render({ persisted: async () => false })
+    const storage = { persisted: async () => false, persist: async () => false }
+    vi.stubGlobal('navigator', { storage })
+    await requestPersistence()
+    const wrapper = await render(storage)
 
     expect(wrapper.get('[data-testid=persistence]').attributes('data-state')).toBe('refused')
     expect(wrapper.text()).toContain('declined')
@@ -44,7 +46,7 @@ describe('StoragePanel', () => {
     const wrapper = await render({ persisted: async () => false })
 
     expect(wrapper.get('[data-testid=persistence]').attributes('data-state')).toBe('not-asked')
-    expect(wrapper.text()).toContain('Not asked yet')
+    expect(wrapper.text()).toContain('Not in effect yet')
   })
 
   it('says unsupported without a Storage API, and no usage figure', async () => {
