@@ -345,6 +345,11 @@ function dismiss() {
           replaces this device’s. Kept: in both, and this device’s is as new or newer, so it stays.
         </p>
 
+        <p class="facts" data-testid="restore-merge-clock">
+          The newer of the two is decided by the time each device saved it, so a device with a wrong
+          clock can win.
+        </p>
+
         <p v-if="skipped.length" class="facts">
           Not restored, because this version of Ration does not know them: {{ skipped.join(', ') }}.
         </p>

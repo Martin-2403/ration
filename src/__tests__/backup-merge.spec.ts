@@ -4,7 +4,13 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 
-import { RestoreError, mergeFromBackup, previewMerge } from '../backup/apply'
+import {
+  RestoreError,
+  mergeFromBackup,
+  previewMerge,
+  replaceFromBackup,
+  validatePayload,
+} from '../backup/apply'
 import type { BackupPayload } from '../backup/envelope'
 import { db } from '../db'
 
@@ -278,7 +284,7 @@ describe('mergeFromBackup', () => {
       await db.logEntries.put(mine as never)
 
       await mergeFromBackup({
-        logEntries: [entry(1, { name: 'Other', createdAt: 2, updatedAt: 99_999_999_999_999 })],
+        logEntries: [entry(1, { name: 'Other', createdAt: 2, updatedAt: 2_000_000 })],
       })
 
       expect(await db.logEntries.get(1)).toEqual(mine)
@@ -445,5 +451,90 @@ describe('previewMerge', () => {
     expect(counts.logEntries).toEqual({ added: 1, updated: 0, kept: 0 })
     expect(await snapshot()).toEqual(before)
     expect(await mergeFromBackup(incoming)).toEqual(counts)
+  })
+
+  it('reports the same counts as the merge on a mixed fixture, colliding log ids included', async () => {
+    await db.foods.bulkPut([
+      food('same', 1_000),
+      food('local-newer', 5_000),
+      food('backup-newer', 1_000),
+    ])
+    await db.nutrientGoals.put(goal('protein', 90, 1_000) as never)
+    await db.logEntries.bulkPut([
+      entry(1, { name: 'Local breakfast', createdAt: 10, updatedAt: 1_000 }),
+      entry(2, { name: 'Local lunch', createdAt: 20, updatedAt: 5_000 }),
+      entry(3, { name: 'Local dinner', createdAt: 30, updatedAt: 1_000 }),
+    ] as never[])
+    const incoming: BackupPayload = {
+      foods: [
+        food('same', 1_000),
+        food('local-newer', 1_000),
+        food('backup-newer', 5_000),
+        food('only-backup', 1_000),
+      ],
+      goals: [goal('protein', 120, 2_000), goal('energy', 2000, 1_000)],
+      logEntries: [
+        // Same record as local 1, written later: updated.
+        entry(1, { name: 'Local breakfast', createdAt: 10, updatedAt: 2_000 }),
+        // Same record as local 2, written earlier: kept.
+        entry(2, { name: 'Local lunch', createdAt: 20, updatedAt: 1_000 }),
+        // A different entry that shares local 3's id: added under a fresh id.
+        entry(3, { name: 'Remote snack', createdAt: 40, updatedAt: 1_000 }),
+        // A different entry whose id is free here: added as it is.
+        entry(8, { name: 'Remote supper', createdAt: 50, updatedAt: 1_000 }),
+      ],
+    }
+    const before = await snapshot()
+
+    const previewed = await previewMerge(incoming)
+
+    expect(await snapshot()).toEqual(before)
+    expect(previewed).toEqual({
+      foods: { added: 1, updated: 1, kept: 2 },
+      goals: { added: 1, updated: 1, kept: 0 },
+      logEntries: { added: 2, updated: 1, kept: 1 },
+    })
+    expect(await mergeFromBackup(incoming)).toEqual(previewed)
+    expect(await db.logEntries.count()).toBe(5)
+  })
+})
+
+describe('a row dated in the future', () => {
+  const NOW = 1_800_000_000_000
+  const DAY = 86_400_000
+
+  it('is refused in every class, naming the row, and nothing is written', async () => {
+    await db.foods.put(food('local', 1_000))
+    const before = await snapshot()
+    const ahead = NOW + DAY + 1
+    const rows: [string, BackupPayload][] = [
+      ['foods row 2', { foods: [food('a', 1), food('b', ahead)] }],
+      ['mealTemplates row 1', { mealTemplates: [meal('m1', ahead)] }],
+      [
+        'dayTemplates row 1',
+        { dayTemplates: [day('d1', ['m1'], ahead)], mealTemplates: [meal('m1')] },
+      ],
+      ['logEntries row 1', { logEntries: [entry(1, { updatedAt: ahead })] }],
+      ['goals row 1', { goals: [goal('energy', 2000, ahead)] }],
+    ]
+
+    for (const [where, payload] of rows) {
+      const attempt = mergeFromBackup(payload, NOW)
+
+      await expect(attempt).rejects.toBeInstanceOf(RestoreError)
+      await expect(attempt).rejects.toThrow(`${where} is dated in the future.`)
+      await expect(replaceFromBackup(payload, NOW)).rejects.toThrow('is dated in the future')
+      await expect(validatePayload(payload, 'merge', NOW)).rejects.toMatchObject({
+        code: 'invalid-row',
+      })
+    }
+
+    expect(await snapshot()).toEqual(before)
+  })
+
+  it('allows a day of clock drift, and anything in the past', async () => {
+    await expect(
+      mergeFromBackup({ foods: [food('a', NOW + DAY), food('b', 1)] }, NOW),
+    ).resolves.toBeDefined()
   })
 })

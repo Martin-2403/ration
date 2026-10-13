@@ -143,6 +143,9 @@ describe('BackupRestore', () => {
         'comes back from the backup',
       )
       expect(wrapper.get('[data-testid=restore-merge-note]').text()).toContain('never deletes')
+      expect(wrapper.get('[data-testid=restore-merge-clock]').text()).toContain(
+        'a device with a wrong clock can win',
+      )
       expect(await db.foods.count()).toBe(2)
     })
 

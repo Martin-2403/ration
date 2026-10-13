@@ -190,13 +190,15 @@ export type RestoreMode = 'replace' | 'merge'
 /**
  * Checks every row of every restorable class, then that every meal a restored
  * day names can be found. Throws RestoreError naming the first problem; returns
- * normally only when the whole payload can be written.
+ * normally only when the whole payload can be written. `now` is the clock the
+ * future-dated check reads; tests pass their own.
  */
 export async function validatePayload(
   payload: BackupPayload,
   mode: RestoreMode = 'replace',
+  now: number = Date.now(),
 ): Promise<void> {
-  checkRows(payload)
+  checkRows(payload, now)
   await checkMealReferences(payload, mode)
 }
 
@@ -237,7 +239,15 @@ async function checkMealReferences(payload: BackupPayload, mode: RestoreMode): P
   }
 }
 
-function checkRows(payload: BackupPayload): void {
+/**
+ * How far ahead of this device's clock a row's `updatedAt` may be. A merge keeps
+ * the larger `updatedAt`, so a far-future stamp would win every later merge
+ * forever. A day of slack lets a backup from a device whose clock runs a little
+ * fast restore; anything beyond that is refused.
+ */
+const MAX_CLOCK_LEAD = 24 * 60 * 60 * 1000
+
+function checkRows(payload: BackupPayload, now: number): void {
   for (const name of RESTORABLE_CLASSES) {
     const rows = payload[name]
     if (rows === undefined) continue
@@ -253,6 +263,8 @@ function checkRows(payload: BackupPayload): void {
       if (!isRow(row)) return fail('is not an object')
       const problem = check(row)
       if (problem) return fail(problem)
+      // Every class's check has already required updatedAt to be a number.
+      if ((row.updatedAt as number) > now + MAX_CLOCK_LEAD) return fail('is dated in the future')
       if (seen.has(row[key])) return fail(`repeats the ${key} of an earlier row`)
       seen.add(row[key])
     })
@@ -287,12 +299,15 @@ export function payloadCounts(payload: BackupPayload): ClassCounts {
  * clears and refills the affected tables, so a failure part-way rolls back.
  * Classes absent from the backup are not touched. Returns what was written.
  */
-export async function replaceFromBackup(given: BackupPayload): Promise<ClassCounts> {
+export async function replaceFromBackup(
+  given: BackupPayload,
+  now: number = Date.now(),
+): Promise<ClassCounts> {
   // IndexedDB cannot clone a Vue reactive Proxy, and a payload held in component
   // state is one. The payload is plain JSON by construction, so a round-trip is safe.
   const payload = JSON.parse(JSON.stringify(given)) as BackupPayload
 
-  await validatePayload(payload)
+  await validatePayload(payload, 'replace', now)
 
   const names = RESTORABLE_CLASSES.filter((name) => payload[name] !== undefined)
   const tables = names.map((name) => CLASSES[name].table())
@@ -337,7 +352,12 @@ interface ClassPlan {
 
 const newPlan = (): ClassPlan => ({ counts: { added: 0, updated: 0, kept: 0 }, put: [], add: [] })
 
-/** Last write wins on `updatedAt`, the write time. A tie keeps the local row. */
+/**
+ * Last write wins on `updatedAt`, the write time. A tie keeps the local row. The
+ * newer of the two is decided by the time each device saved it, so a device with
+ * a wrong clock can win; validation only refuses stamps more than a day ahead of
+ * this device's own clock (MAX_CLOCK_LEAD).
+ */
 const backupIsNewer = (incoming: Row, local: Row) =>
   (incoming.updatedAt as number) > (local.updatedAt as number)
 
@@ -485,10 +505,13 @@ export async function previewMerge(given: BackupPayload): Promise<MergeResult> {
  * written exactly as the backup holds them, never restamped. Log entries are
  * matched by identity rather than id; see planLogEntries. Returns the counts.
  */
-export async function mergeFromBackup(given: BackupPayload): Promise<MergeResult> {
+export async function mergeFromBackup(
+  given: BackupPayload,
+  now: number = Date.now(),
+): Promise<MergeResult> {
   const payload = JSON.parse(JSON.stringify(given)) as BackupPayload
 
-  await validatePayload(payload, 'merge')
+  await validatePayload(payload, 'merge', now)
 
   const names = restorableNames(payload)
 
