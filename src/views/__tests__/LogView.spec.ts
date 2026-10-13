@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addLocalDays, localMiddayFromISODate, startOfLocalDay, toISODate } from '../../dates'
+import { recordBackup } from '../../backup/last-backup'
 import { db, dayTemplates, mealTemplates } from '../../db'
 import router from '../../router'
 import { useLogStore } from '../../stores/log'
@@ -71,6 +72,7 @@ beforeEach(async () => {
     db.mealTemplates.clear(),
     db.dayTemplates.clear(),
   ])
+  localStorage.clear()
   setActivePinia(createPinia())
 })
 
@@ -1032,5 +1034,60 @@ describe('LogView', () => {
 
     expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
+  })
+
+  describe('backup prompt (#147)', () => {
+    const logPorridge = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+      await openMeals(wrapper)
+      await optionNamed(wrapper, 'Porridge').trigger('click')
+      await flushPromises()
+      await buttonNamed(wrapper, 'Log meal').trigger('click')
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Logged Porridge'))
+    }
+
+    it('is not there before anything has been logged', async () => {
+      const wrapper = await render()
+
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+    })
+
+    it('appears after a log when the log has never been backed up', async () => {
+      const wrapper = await render()
+      await logPorridge(wrapper)
+
+      expect(wrapper.find('aside[data-variant="first"]').exists()).toBe(true)
+    })
+
+    it('stays away when the last backup of the log is recent', async () => {
+      recordBackup(['logEntries'])
+      const wrapper = await render()
+      await logPorridge(wrapper)
+
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+    })
+
+    it('does not appear for a day that logged nothing', async () => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+      const wrapper = await render()
+      await openDays(wrapper)
+      await optionNamed(wrapper, 'Workday').trigger('click')
+      await flushPromises()
+      await buttonNamed(wrapper, 'Skip this meal').trigger('click')
+      await buttonNamed(wrapper, 'Done').trigger('click')
+      expect(wrapper.find('.confirmation').text()).toContain('Nothing logged')
+
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+    })
+
+    it('goes away on "Not now" and does not return at the next log', async () => {
+      const wrapper = await render()
+      await logPorridge(wrapper)
+
+      await buttonNamed(wrapper, 'Not now').trigger('click')
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+
+      await logPorridge(wrapper)
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+    })
   })
 })

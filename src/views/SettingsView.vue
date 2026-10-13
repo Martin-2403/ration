@@ -1,8 +1,25 @@
 <script setup lang="ts">
+import { nextTick, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+
+import { BACKUP_SECTION_HASH } from '../backup/nudge'
 import BackupExport from '../components/BackupExport.vue'
 import BackupRestore from '../components/BackupRestore.vue'
 import GoalForm from '../components/GoalForm.vue'
 import StoragePanel from '../components/StoragePanel.vue'
+
+const route = useRoute()
+
+/**
+ * Arriving from the backup prompt (#147): bring the export form into view and put
+ * the cursor in its first field, so the passphrase is the next thing to do.
+ */
+onMounted(async () => {
+  if (route.hash !== BACKUP_SECTION_HASH) return
+
+  await nextTick()
+  document.getElementById('backup-passphrase')?.focus()
+})
 </script>
 
 <template>
