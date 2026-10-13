@@ -2,6 +2,7 @@
 import { nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
+import { focusBackupForm } from '../backup/focus-export'
 import { BACKUP_SECTION_HASH } from '../backup/nudge'
 import BackupExport from '../components/BackupExport.vue'
 import BackupRestore from '../components/BackupRestore.vue'
@@ -22,7 +23,7 @@ watch(
     if (hash !== BACKUP_SECTION_HASH) return
 
     await nextTick()
-    document.getElementById('backup-passphrase')?.focus()
+    focusBackupForm()
   },
   { immediate: true, flush: 'post' },
 )
