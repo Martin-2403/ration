@@ -1051,7 +1051,19 @@ describe('LogView', () => {
       expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
     })
 
+    /** The prompt waits for data a day old; this is a log that has some. */
+    const seedOldEntry = () =>
+      db.logEntries.add({
+        name: 'Earlier',
+        timestamp: Date.now() - 3 * 86_400_000,
+        createdAt: Date.now() - 3 * 86_400_000,
+        updatedAt: Date.now() - 3 * 86_400_000,
+        items: [],
+        totals: {},
+      } as never)
+
     it('appears after a log when the log has never been backed up', async () => {
+      await seedOldEntry()
       const wrapper = await render()
       await logPorridge(wrapper)
 
@@ -1060,6 +1072,7 @@ describe('LogView', () => {
 
     it('stays away when the last backup of the log is recent', async () => {
       recordBackup(['logEntries'])
+      await seedOldEntry()
       const wrapper = await render()
       await logPorridge(wrapper)
 
@@ -1079,7 +1092,15 @@ describe('LogView', () => {
       expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
     })
 
+    it('waits while everything in the log was written today', async () => {
+      const wrapper = await render()
+      await logPorridge(wrapper)
+
+      expect(wrapper.find('aside[data-variant]').exists()).toBe(false)
+    })
+
     it('goes away on "Not now" and does not return at the next log', async () => {
+      await seedOldEntry()
       const wrapper = await render()
       await logPorridge(wrapper)
 

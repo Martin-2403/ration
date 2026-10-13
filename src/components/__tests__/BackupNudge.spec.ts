@@ -1,9 +1,13 @@
+// The prompt reads the age of the log from Dexie.
+import 'fake-indexeddb/auto'
+
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { recordBackup } from '../../backup/last-backup'
 import { SNOOZE_MS } from '../../backup/nudge'
 import { lastSnoozedAt } from '../../backup/snooze'
+import { db } from '../../db'
 import router from '../../router'
 import BackupNudge from '../BackupNudge.vue'
 
@@ -19,8 +23,24 @@ const render = async () => {
 const button = (wrapper: Awaited<ReturnType<typeof render>>, label: string) =>
   wrapper.findAll('button').find((b) => b.text() === label)!
 
-beforeEach(() => {
+const DAY = 24 * 60 * 60 * 1000
+
+/** A log entry written `ageMs` ago. */
+const seedEntry = (ageMs: number) =>
+  db.logEntries.add({
+    name: 'Porridge',
+    timestamp: Date.now() - ageMs,
+    createdAt: Date.now() - ageMs,
+    updatedAt: Date.now() - ageMs,
+    items: [],
+    totals: {},
+  } as never)
+
+beforeEach(async () => {
   localStorage.clear()
+  await db.logEntries.clear()
+  // Data old enough to be worth a prompt, unless a test says otherwise.
+  await seedEntry(3 * DAY)
 })
 
 afterEach(() => {
@@ -38,6 +58,23 @@ describe('BackupNudge', () => {
     expect(wrapper.find('aside').attributes('data-variant')).toBe('first')
     expect(wrapper.text()).toContain('not backed up your log yet')
     expect(wrapper.find('[data-testid="install-hint"]').exists()).toBe(false)
+  })
+
+  it('says nothing while the log holds only today’s entries', async () => {
+    await db.logEntries.clear()
+    await seedEntry(60 * 1000)
+
+    expect((await render()).find('aside').exists()).toBe(false)
+  })
+
+  it('says nothing when the log is empty', async () => {
+    await db.logEntries.clear()
+
+    expect((await render()).find('aside').exists()).toBe(false)
+  })
+
+  it('announces itself politely to a screen reader', async () => {
+    expect((await render()).get('aside').attributes('role')).toBe('status')
   })
 
   it('says nothing when the log was backed up recently', async () => {
@@ -96,14 +133,21 @@ describe('BackupNudge', () => {
       vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE)
     })
 
+    it('asks from the first log, even when the data is new', async () => {
+      await db.logEntries.clear()
+      await seedEntry(60 * 1000)
+
+      expect((await render()).find('aside').attributes('data-variant')).toBe('ios-tab')
+    })
+
     it('shows the stronger copy and the install steps', async () => {
       const wrapper = await render()
 
       expect(wrapper.find('aside').attributes('data-variant')).toBe('ios-tab')
-      expect(wrapper.get('[data-testid="ios-warning"]').text()).toContain('Safari tab')
+      expect(wrapper.get('[data-testid="ios-warning"]').text()).toContain('browser tab on iOS')
 
       const hint = wrapper.get('[data-testid="install-hint"]').text()
-      expect(hint).toContain('Share')
+      expect(hint).toContain('in Safari, tap Share')
       expect(hint).toContain('Add to Home Screen')
       expect(hint).toContain('empty storage')
       expect(hint).toContain('back up first')

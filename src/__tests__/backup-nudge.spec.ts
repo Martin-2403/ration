@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   BACKUP_MAX_AGE_MS,
   IOS_TAB_BACKUP_MAX_AGE_MS,
+  MIN_DATA_AGE_MS,
   SNOOZE_MS,
   shouldNudge,
   type NudgeInput,
@@ -14,6 +15,7 @@ const NOW = Date.UTC(2026, 9, 12, 12, 0, 0)
 const input = (over: Partial<NudgeInput> = {}): NudgeInput => ({
   now: NOW,
   lastBackupAt: NOW - 1000,
+  oldestEntryAt: NOW - 30 * 24 * 60 * 60 * 1000,
   lastSnoozedAt: undefined,
   installed: false,
   platform: 'other',
@@ -31,6 +33,47 @@ describe('shouldNudge', () => {
 
   it('calls a backup overdue once it is as old as the cadence', () => {
     expect(shouldNudge(input({ lastBackupAt: NOW - BACKUP_MAX_AGE_MS }))).toBe('overdue')
+  })
+
+  describe('how old the data is', () => {
+    const never = { lastBackupAt: undefined }
+
+    it('stays quiet when the log is empty', () => {
+      expect(shouldNudge(input({ ...never, oldestEntryAt: undefined }))).toBeUndefined()
+    })
+
+    it('stays quiet while the oldest entry is younger than the minimum', () => {
+      expect(
+        shouldNudge(input({ ...never, oldestEntryAt: NOW - MIN_DATA_AGE_MS + 1 })),
+      ).toBeUndefined()
+    })
+
+    it('asks once the oldest entry is as old as the minimum', () => {
+      expect(shouldNudge(input({ ...never, oldestEntryAt: NOW - MIN_DATA_AGE_MS }))).toBe('first')
+    })
+
+    it('applies to an overdue prompt as well', () => {
+      const overdue = { lastBackupAt: NOW - 2 * BACKUP_MAX_AGE_MS, oldestEntryAt: NOW - 1000 }
+
+      expect(shouldNudge(input(overdue))).toBeUndefined()
+    })
+
+    it('does not apply in an iOS tab, which asks from the first log', () => {
+      expect(shouldNudge(input({ ...never, platform: 'ios', oldestEntryAt: NOW - 1000 }))).toBe(
+        'ios-tab',
+      )
+      expect(shouldNudge(input({ ...never, platform: 'ios', oldestEntryAt: undefined }))).toBe(
+        'ios-tab',
+      )
+    })
+
+    it('does apply to an installed iOS app', () => {
+      expect(
+        shouldNudge(
+          input({ ...never, platform: 'ios', installed: true, oldestEntryAt: NOW - 1000 }),
+        ),
+      ).toBeUndefined()
+    })
   })
 
   describe('snooze', () => {

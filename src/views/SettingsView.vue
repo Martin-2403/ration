@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted } from 'vue'
+import { nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { BACKUP_SECTION_HASH } from '../backup/nudge'
@@ -11,15 +11,21 @@ import StoragePanel from '../components/StoragePanel.vue'
 const route = useRoute()
 
 /**
- * Arriving from the backup prompt (#147): bring the export form into view and put
+ * Sent here by the backup prompt (#147): bring the export form into view and put
  * the cursor in its first field, so the passphrase is the next thing to do.
+ * Watched as well as read on arrival, because tapping the prompt's button while
+ * Settings is already mounted changes only the hash.
  */
-onMounted(async () => {
-  if (route.hash !== BACKUP_SECTION_HASH) return
+watch(
+  () => route.hash,
+  async (hash) => {
+    if (hash !== BACKUP_SECTION_HASH) return
 
-  await nextTick()
-  document.getElementById('backup-passphrase')?.focus()
-})
+    await nextTick()
+    document.getElementById('backup-passphrase')?.focus()
+  },
+  { immediate: true, flush: 'post' },
+)
 </script>
 
 <template>

@@ -33,6 +33,17 @@ describe('SettingsView', () => {
     expect(document.activeElement?.id).toBe('backup-passphrase')
   })
 
+  it('focuses it again when the hash changes on a Settings page that is already open', async () => {
+    await open('/settings')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement?.id).not.toBe('backup-passphrase')
+
+    await router.push({ path: '/settings', hash: '#backup' })
+    await flushPromises()
+
+    expect(document.activeElement?.id).toBe('backup-passphrase')
+  })
+
   it('leaves focus alone on an ordinary visit', async () => {
     ;(document.activeElement as HTMLElement | null)?.blur()
     await open('/settings')
