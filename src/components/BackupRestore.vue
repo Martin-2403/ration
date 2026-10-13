@@ -3,12 +3,16 @@ import { computed, ref, shallowRef } from 'vue'
 
 import {
   localCounts,
+  mergeFromBackup,
   payloadCounts,
+  previewMerge,
   replaceFromBackup,
   unknownClasses,
   validatePayload,
   RestoreError,
   type ClassCounts,
+  type MergeResult,
+  type RestoreMode,
 } from '../backup/apply'
 import {
   BackupError,
@@ -41,8 +45,17 @@ const incoming = ref<ClassCounts>({})
 const current = ref<ClassCounts>({})
 const skipped = ref<string[]>([])
 
-/** The counts written, once the restore has happened. */
+/** Merging is the default: it cannot remove anything from this device. */
+const mode = ref<RestoreMode>('merge')
+/** What a merge would add, update and keep, worked out while the backup is open. */
+const mergePlan = ref<MergeResult>({})
+/** Why a replace would be refused, when a merge would not be (a day naming a meal only this device has). */
+const replaceBlocked = ref('')
+
+/** The counts written, once a replace has happened. */
 const restored = ref<ClassCounts>()
+/** The counts written, once a merge has happened. */
+const merged = ref<MergeResult>()
 
 const fileInput = ref<HTMLInputElement>()
 const passphraseInput = ref<HTMLInputElement>()
@@ -67,10 +80,27 @@ const summaryRows = computed(() =>
   })),
 )
 
+const mergeRows = computed(() =>
+  Object.entries(mergePlan.value).map(([name, counts]) => ({
+    name,
+    label: labelOf(name),
+    ...counts,
+  })),
+)
+
 const restoredText = computed(() =>
   Object.entries(restored.value ?? {})
     .map(([name, count]) => `${count} ${labelOf(name).toLowerCase()}`)
     .join(', '),
+)
+
+const mergedText = computed(() =>
+  Object.entries(merged.value ?? {})
+    .map(
+      ([name, c]) =>
+        `${labelOf(name).toLowerCase()}: ${c.added} added, ${c.updated} updated, ${c.kept} kept`,
+    )
+    .join('; '),
 )
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
@@ -84,6 +114,9 @@ function reset() {
   incoming.value = {}
   current.value = {}
   skipped.value = []
+  mode.value = 'merge'
+  mergePlan.value = {}
+  replaceBlocked.value = ''
   busy.value = false
   if (fileInput.value) fileInput.value.value = ''
 }
@@ -115,7 +148,7 @@ function describe(error: unknown): string {
 async function onFile(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   reset()
-  restored.value = undefined
+  dismiss()
   if (!file) return
 
   try {
@@ -134,16 +167,30 @@ async function open() {
 
   try {
     const opened = await decryptBackup(fileText.value, passphrase.value)
-    await validatePayload(opened)
+    // Checked as a merge, the default: its meal references are the looser of the two.
+    await validatePayload(opened, 'merge')
     incoming.value = payloadCounts(opened)
     current.value = await localCounts(Object.keys(incoming.value))
+    mergePlan.value = await previewMerge(opened)
     skipped.value = unknownClasses(opened)
+    replaceBlocked.value = await replaceProblem(opened)
     payload.value = opened
   } catch (error) {
     problem.value = describe(error)
     passphraseInput.value?.focus()
   } finally {
     busy.value = false
+  }
+}
+
+/** The reason a replace would be refused, or '' when it would go ahead. */
+async function replaceProblem(opened: BackupPayload): Promise<string> {
+  try {
+    await validatePayload(opened, 'replace')
+    return ''
+  } catch (error) {
+    if (error instanceof RestoreError) return describe(error)
+    throw error
   }
 }
 
@@ -162,8 +209,24 @@ async function replace() {
   }
 }
 
+async function merge() {
+  if (!payload.value || busy.value) return
+  busy.value = true
+  problem.value = ''
+
+  try {
+    const written = await mergeFromBackup(payload.value)
+    reset()
+    merged.value = written
+  } catch (error) {
+    problem.value = describe(error)
+    busy.value = false
+  }
+}
+
 function dismiss() {
   restored.value = undefined
+  merged.value = undefined
 }
 </script>
 
@@ -172,13 +235,19 @@ function dismiss() {
     <h3 id="restore-heading">Restore from a backup</h3>
 
     <p class="hint">
-      Restoring replaces the data on this device with the backup’s. Choose a backup file, then enter
-      the passphrase it was made with.
+      Choose a backup file, then enter the passphrase it was made with. You can then merge the
+      backup into the data on this device, or replace this device’s data with it.
     </p>
 
     <p v-if="restored" class="done" role="status" data-testid="restore-done">
       Restored {{ restoredText || 'nothing' }}. The data on this device now matches the backup. The
       app’s screens read the new data when you open them.
+      <button type="button" class="ghost" @click="dismiss">Dismiss</button>
+    </p>
+
+    <p v-else-if="merged" class="done" role="status" data-testid="restore-done">
+      Merged the backup into this device. {{ mergedText || 'Nothing to merge.' }}. Nothing was
+      deleted. The app’s screens read the new data when you open them.
       <button type="button" class="ghost" @click="dismiss">Dismiss</button>
     </p>
 
@@ -216,51 +285,138 @@ function dismiss() {
     </template>
 
     <section v-else class="confirm" aria-labelledby="restore-confirm-heading">
-      <h4 id="restore-confirm-heading">Replace the data on this device?</h4>
+      <h4 id="restore-confirm-heading">Restore this backup</h4>
 
-      <table class="summary" data-testid="restore-summary">
-        <thead>
-          <tr>
-            <th scope="col">Data</th>
-            <th scope="col">On this device</th>
-            <th scope="col">In the backup</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in summaryRows" :key="row.name">
-            <th scope="row">{{ row.label }}</th>
-            <td>{{ row.current }}</td>
-            <td>{{ row.incoming }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <fieldset class="modes" :disabled="busy">
+        <legend>How to restore it</legend>
 
-      <p v-if="skipped.length" class="facts">
-        Not restored, because this version of Ration does not know them: {{ skipped.join(', ') }}.
-      </p>
+        <div class="mode">
+          <input
+            id="restore-mode-merge"
+            v-model="mode"
+            type="radio"
+            name="restore-mode"
+            value="merge"
+          />
+          <label for="restore-mode-merge">Merge into this device</label>
+          <p class="hint">
+            Keeps what is here and adds what only the backup holds. Where both have the same record,
+            the one saved last is kept. Nothing is removed.
+          </p>
+        </div>
 
-      <p class="warning" data-testid="restore-warning">
-        <template v-if="summaryRows.length">
-          The {{ summaryRows.map((row) => row.label.toLowerCase()).join(', ') }}
-          {{ plural(summaryRows.length, 'on this device is', 'on this device are') }} replaced by
-          the backup’s. Anything saved here that the backup does not hold is lost, and this cannot
-          be undone.
-        </template>
-        <template v-else>The backup holds nothing this version can restore.</template>
-        Data of other kinds is left as it is.
-      </p>
+        <div class="mode">
+          <input
+            id="restore-mode-replace"
+            v-model="mode"
+            type="radio"
+            name="restore-mode"
+            value="replace"
+          />
+          <label for="restore-mode-replace">Replace this device’s data</label>
+          <p class="hint">
+            Swaps what is here for what the backup holds, for each kind of data it carries.
+          </p>
+        </div>
+      </fieldset>
 
-      <div class="actions">
-        <button type="button" class="ghost" :disabled="busy" @click="reset">Cancel</button>
-        <button
-          type="button"
-          class="danger"
-          :disabled="busy || !summaryRows.length"
-          @click="replace"
-        >
-          {{ busy ? 'Replacing…' : 'Replace my data' }}
-        </button>
-      </div>
+      <template v-if="mode === 'merge'">
+        <table class="summary" data-testid="restore-merge-summary">
+          <thead>
+            <tr>
+              <th scope="col">Data</th>
+              <th scope="col">Added</th>
+              <th scope="col">Updated</th>
+              <th scope="col">Kept</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in mergeRows" :key="row.name">
+              <th scope="row">{{ row.label }}</th>
+              <td>{{ row.added }}</td>
+              <td>{{ row.updated }}</td>
+              <td>{{ row.kept }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="facts">
+          Added: only in the backup. Updated: in both, and the backup’s was saved later, so it
+          replaces this device’s. Kept: in both, and this device’s is as new or newer, so it stays.
+        </p>
+
+        <p class="facts" data-testid="restore-merge-clock">
+          The newer of the two is decided by the time each device saved it, so a device with a wrong
+          clock can win.
+        </p>
+
+        <p v-if="skipped.length" class="facts">
+          Not restored, because this version of Ration does not know them: {{ skipped.join(', ') }}.
+        </p>
+
+        <p class="note" data-testid="restore-merge-note">
+          A merge never deletes anything, and deletions are not tracked: something you deleted on
+          this device comes back from the backup if the backup still holds it. Data of other kinds
+          is left as it is.
+        </p>
+
+        <div class="actions">
+          <button type="button" class="ghost" :disabled="busy" @click="reset">Cancel</button>
+          <button type="button" :disabled="busy || !mergeRows.length" @click="merge">
+            {{ busy ? 'Merging…' : 'Merge into my data' }}
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <table class="summary" data-testid="restore-summary">
+          <thead>
+            <tr>
+              <th scope="col">Data</th>
+              <th scope="col">On this device</th>
+              <th scope="col">In the backup</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in summaryRows" :key="row.name">
+              <th scope="row">{{ row.label }}</th>
+              <td>{{ row.current }}</td>
+              <td>{{ row.incoming }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p v-if="skipped.length" class="facts">
+          Not restored, because this version of Ration does not know them: {{ skipped.join(', ') }}.
+        </p>
+
+        <p class="warning" data-testid="restore-warning">
+          <template v-if="summaryRows.length">
+            The {{ summaryRows.map((row) => row.label.toLowerCase()).join(', ') }}
+            {{ plural(summaryRows.length, 'on this device is', 'on this device are') }} replaced by
+            the backup’s. Anything saved here that the backup does not hold is lost, and this cannot
+            be undone.
+          </template>
+          <template v-else>The backup holds nothing this version can restore.</template>
+          Data of other kinds is left as it is.
+        </p>
+
+        <p v-if="replaceBlocked" class="problem" data-testid="restore-replace-blocked">
+          {{ replaceBlocked }} Merging this backup is still possible.
+        </p>
+
+        <div class="actions">
+          <button type="button" class="ghost" :disabled="busy" @click="reset">Cancel</button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="busy || !summaryRows.length || !!replaceBlocked"
+            @click="replace"
+          >
+            {{ busy ? 'Replacing…' : 'Replace my data' }}
+          </button>
+        </div>
+      </template>
     </section>
 
     <p v-if="problem" class="problem" role="alert" data-testid="restore-problem">{{ problem }}</p>
@@ -358,6 +514,54 @@ input:hover {
   padding: var(--space-3);
   border: 1px solid var(--status-under);
   border-radius: var(--radius-control);
+}
+
+.note {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.modes {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  color: var(--ink-soft);
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+.mode {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: center;
+}
+
+.mode label {
+  color: var(--ink);
+  font-size: var(--text-body);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.mode .hint {
+  grid-column: 2;
+}
+
+input[type='radio'] {
+  margin: 0;
+  accent-color: var(--primary);
 }
 
 .actions {
