@@ -14,6 +14,7 @@ import { Copy, Pencil, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { useStepHistory } from '../composables/useStepHistory'
+import BackupNudge from '../components/BackupNudge.vue'
 import DayRunner from '../components/DayRunner.vue'
 import DayTemplateForm from '../components/DayTemplateForm.vue'
 import FoodForm from '../components/FoodForm.vue'
@@ -314,6 +315,10 @@ async function logFood(food: NewFood, grams: number) {
            runner's closing panel names the meals it could not log. -->
       <template v-else>Nothing logged from {{ outcome.what }}.</template>
     </p>
+
+    <!-- Only after something was actually written, and beside the confirmation
+         rather than over the page: it asks, it never gets in the way of logging. -->
+    <BackupNudge v-if="outcome?.logged" />
 
     <template v-if="validDate">
       <!-- One home for everything that adds to a day, so a picker (#40), a
