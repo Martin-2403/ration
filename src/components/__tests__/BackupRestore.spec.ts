@@ -2,11 +2,29 @@
 import 'fake-indexeddb/auto'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 
 import { encryptBackup, type BackupPayload } from '../../backup/envelope'
+import { lastBackupAt, recordBackup } from '../../backup/last-backup'
 import { db } from '../../db'
+import BackupExport from '../BackupExport.vue'
 import BackupRestore from '../BackupRestore.vue'
+
+// The export form uses the production iteration count unless told otherwise;
+// 600,000 rounds in a test would take minutes. Everything else is real.
+vi.mock('../../backup/envelope', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../backup/envelope')>()
+
+  return {
+    ...original,
+    encryptBackup: (
+      data: Parameters<typeof original.encryptBackup>[0],
+      pass: string,
+      options?: Parameters<typeof original.encryptBackup>[2],
+    ) => original.encryptBackup(data, pass, options ?? { iterations: 1000 }),
+  }
+})
 
 const FAST = { iterations: 1_000 }
 
@@ -56,6 +74,7 @@ async function snapshot() {
 }
 
 beforeEach(async () => {
+  localStorage.clear()
   await Promise.all([
     db.foods.clear(),
     db.mealTemplates.clear(),
@@ -314,5 +333,227 @@ describe('BackupRestore', () => {
     expect(wrapper.get('[data-testid=restore-problem]').text()).toContain('Nothing on this device')
     expect(buttonByText(wrapper, 'Replace my data')).toBeUndefined()
     expect(await snapshot()).toEqual(before)
+  })
+})
+
+describe('the safety backup before a replace (#153)', () => {
+  const NOW = new Date(2026, 9, 13, 12, 0).getTime()
+  const HOUR = 60 * 60 * 1000
+
+  const mounted: Array<{ unmount: () => void }> = []
+
+  beforeEach(() => {
+    vi.spyOn(Date, 'now').mockReturnValue(NOW)
+  })
+
+  afterEach(() => {
+    mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  async function replaceConfirm() {
+    const wrapper = mount(BackupRestore)
+    await choose(wrapper, await fileOf(payload))
+    await openWith(wrapper, 'correct horse')
+    await wrapper.get('#restore-mode-replace').setValue(true)
+
+    return wrapper
+  }
+
+  const line = (wrapper: ReturnType<typeof mount>) =>
+    wrapper.get('[data-testid=restore-last-backup]')
+
+  it('says never, and that anything saved here is lost with no way back', async () => {
+    const wrapper = await replaceConfirm()
+
+    expect(line(wrapper).text()).toContain('Last backup of this device’s log: never.')
+    expect(line(wrapper).text()).toContain('no way back')
+    expect(line(wrapper).attributes('data-stale')).toBeDefined()
+  })
+
+  it('gives a recent backup as a relative time and a date, without calling the data safe', async () => {
+    recordBackup(['logEntries', 'foods'], NOW - 2 * HOUR)
+    const wrapper = await replaceConfirm()
+
+    const text = line(wrapper).text()
+    expect(text).toContain('Last backup of this device’s log: 2 hours ago (')
+    expect(text).toContain('not in it')
+    expect(text).not.toContain('no way back')
+    expect(text).not.toMatch(/\bsafe\b/i)
+    expect(line(wrapper).attributes('data-stale')).toBeUndefined()
+  })
+
+  it('says plainly that what was saved since is lost when the backup is older than a day', async () => {
+    recordBackup(['logEntries'], NOW - 3 * 24 * HOUR)
+    const wrapper = await replaceConfirm()
+
+    expect(line(wrapper).text()).toContain('3 days ago')
+    expect(line(wrapper).text()).toContain('Anything saved here since then will be lost')
+    expect(line(wrapper).text()).toContain('no way back')
+    expect(line(wrapper).attributes('data-stale')).toBeDefined()
+  })
+
+  it('uses the iOS-tab cadence the prompt uses: 18 hours is overdue there, not elsewhere', async () => {
+    recordBackup(['logEntries'], NOW - 18 * HOUR)
+    const elsewhere = await replaceConfirm()
+    expect(line(elsewhere).attributes('data-stale')).toBeUndefined()
+
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',
+    )
+    const iosTab = await replaceConfirm()
+
+    expect(line(iosTab).text()).toContain('18 hours ago')
+    expect(line(iosTab).attributes('data-stale')).toBeDefined()
+    expect(line(iosTab).text()).toContain('no way back')
+  })
+
+  it('words a backup made this minute with the browser’s own "now"', async () => {
+    recordBackup(['logEntries'], NOW - 20_000)
+    const wrapper = await replaceConfirm()
+
+    expect(line(wrapper).text()).toContain(
+      `log: ${new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(0, 'second')} (`,
+    )
+    expect(line(wrapper).text()).not.toContain('just now')
+  })
+
+  it('does not count an export that left the log out', async () => {
+    recordBackup(['foods', 'goals'], NOW - HOUR)
+    const wrapper = await replaceConfirm()
+
+    expect(line(wrapper).text()).toContain('log: never.')
+  })
+
+  it('is not shown for a merge', async () => {
+    const wrapper = mount(BackupRestore)
+    await choose(wrapper, await fileOf(payload))
+    await openWith(wrapper, 'correct horse')
+
+    expect(wrapper.find('[data-testid=restore-last-backup]').exists()).toBe(false)
+    expect(buttonByText(wrapper, 'Back up this device first')).toBeUndefined()
+  })
+
+  it('joins the replaced kinds with "and" before the last', async () => {
+    await db.mealTemplates.put({ id: 'm', name: 'M', slots: [], updatedAt: 1 } as never)
+    const wrapper = mount(BackupRestore)
+    const everything: BackupPayload = {
+      foods: [food('oats')],
+      mealTemplates: [{ id: 'm', name: 'M', slots: [], updatedAt: 1 }],
+      dayTemplates: [{ id: 'd', name: 'D', mealTemplateIds: ['m'], updatedAt: 1 }],
+      logEntries: [],
+      goals: [goal('energy', 2000)],
+    }
+    await choose(wrapper, await fileOf(everything))
+    await openWith(wrapper, 'correct horse')
+    await wrapper.get('#restore-mode-replace').setValue(true)
+
+    expect(wrapper.get('[data-testid=restore-warning]').text()).toMatch(
+      /^The foods, meal templates, day templates, log entries and daily goals on this device are replaced/,
+    )
+  })
+
+  it('words two kinds with a bare "and" and one kind with none', async () => {
+    const wrapper = await replaceConfirm()
+    expect(wrapper.get('[data-testid=restore-warning]').text()).toMatch(
+      /^The foods and daily goals on this device are replaced/,
+    )
+
+    await buttonByText(wrapper, 'Cancel')!.trigger('click')
+    await choose(wrapper, await fileOf({ goals: [goal('energy', 2000)] }))
+    await openWith(wrapper, 'correct horse')
+    await wrapper.get('#restore-mode-replace').setValue(true)
+
+    expect(wrapper.get('[data-testid=restore-warning]').text()).toMatch(
+      /^The daily goals on this device is replaced/,
+    )
+  })
+
+  describe('with the export form on the same page', () => {
+    const Page = defineComponent({
+      render: () => h('div', [h(BackupExport), h(BackupRestore)]),
+    })
+
+    async function openedPage() {
+      const wrapper = mount(Page, { attachTo: document.body })
+      mounted.push(wrapper)
+      await vi.waitFor(() => expect(wrapper.find('.count').text()).not.toBe('–'))
+
+      const input = wrapper.get<HTMLInputElement>('input[type=file]')
+      Object.defineProperty(input.element, 'files', {
+        value: [await fileOf(payload)],
+        configurable: true,
+      })
+      await input.trigger('change')
+      await flushPromises()
+      await wrapper.get('#restore-passphrase').setValue('correct horse')
+      await wrapper.get('.restore form').trigger('submit')
+      await vi.waitFor(() => expect(wrapper.find('#restore-mode-replace').exists()).toBe(true))
+      await wrapper.get('#restore-mode-replace').setValue(true)
+
+      return wrapper
+    }
+
+    it('focuses the export passphrase and leaves the opened backup and its confirm in place', async () => {
+      const wrapper = await openedPage()
+      const before = await snapshot()
+      expect(document.activeElement?.id).not.toBe('backup-passphrase')
+
+      await buttonByText(wrapper, 'Back up this device first')!.trigger('click')
+
+      expect(document.activeElement?.id).toBe('backup-passphrase')
+      expect(wrapper.find('[data-testid=restore-summary]').exists()).toBe(true)
+      expect(buttonByText(wrapper, 'Replace my data')!.attributes('disabled')).toBeUndefined()
+      expect(wrapper.get<HTMLInputElement>('#restore-mode-replace').element.checked).toBe(true)
+      expect(await snapshot()).toEqual(before)
+    })
+
+    it('updates the freshness line once the export is recorded, and the replace still works', async () => {
+      vi.stubGlobal('navigator', {})
+      URL.createObjectURL = vi.fn(() => 'blob:ration')
+      URL.revokeObjectURL = vi.fn()
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      // jsdom has no scrollIntoView; the page calls it on the confirm heading.
+      const scrolled = vi.fn()
+      Element.prototype.scrollIntoView = scrolled
+      const wrapper = await openedPage()
+      expect(line(wrapper).text()).toContain('log: never.')
+
+      await wrapper.get('#backup-passphrase').setValue('a long passphrase for a backup')
+      await wrapper.get('#backup-passphrase-again').setValue('a long passphrase for a backup')
+      await wrapper.get('form.export').trigger('submit')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid=done]').exists()).toBe(true))
+      await flushPromises()
+
+      expect(lastBackupAt()).toBe(NOW)
+      expect(line(wrapper).text()).toContain('Last backup of this device’s log: now (')
+      expect(line(wrapper).attributes('data-stale')).toBeUndefined()
+      // The user lands back on the confirm, with nothing activated.
+      expect(scrolled).toHaveBeenCalled()
+      expect(document.activeElement?.id).toBe('restore-confirm-heading')
+      expect(await db.foods.get('local-food')).toBeDefined()
+      // The opened backup is still there, and the replace is still the same single step.
+      expect(wrapper.find('[data-testid=restore-summary]').exists()).toBe(true)
+
+      await buttonByText(wrapper, 'Replace my data')!.trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('[data-testid=restore-done]').exists()).toBe(true))
+      expect((await db.foods.toArray()).map((f) => f.id).sort()).toEqual(['milk', 'oats'])
+    })
+
+    it('does not move anything when an export finishes with no restore open', async () => {
+      const scrolled = vi.fn()
+      Element.prototype.scrollIntoView = scrolled
+      const wrapper = mount(Page, { attachTo: document.body })
+      mounted.push(wrapper)
+      await flushPromises()
+
+      recordBackup(['logEntries'], NOW)
+      await flushPromises()
+
+      expect(scrolled).not.toHaveBeenCalled()
+      expect(document.activeElement?.id).not.toBe('restore-confirm-heading')
+    })
   })
 })

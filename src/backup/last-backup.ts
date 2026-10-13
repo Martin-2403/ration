@@ -15,8 +15,16 @@
  * of the data classes, so they are never part of a backup or a restore. Nothing
  * secret is kept here.
  *
+ * Reactive for the page: every read touches `revision` and `recordBackup` bumps it,
+ * so a computed that calls `lastBackupAt()` re-evaluates once an export is recorded
+ * (the restore confirm shows the figure while the export form sits on the same
+ * page). A module-level ref rather than an event or polling: nothing to subscribe
+ * to or tear down. A write from another tab is not seen until the next read.
+ *
  * Never throws: storage can be missing (privacy modes) or full.
  */
+import { ref } from 'vue'
+
 const LATEST = 'ration.lastExport'
 const WITH_LOG = 'ration.lastExportWithLog'
 
@@ -30,7 +38,12 @@ export interface ExportRecord {
   classes: string[]
 }
 
+/** Bumped by every recorded backup; reading it is what makes the getters reactive. */
+const revision = ref(0)
+
 function read(key: string): ExportRecord | undefined {
+  void revision.value
+
   try {
     const raw = localStorage.getItem(key)
     if (raw === null) return undefined
@@ -83,4 +96,6 @@ export function recordBackup(classes: readonly string[], at: number = Date.now()
 
   write(LATEST, record)
   if (record.classes.includes(LOG_CLASS)) write(WITH_LOG, record)
+
+  revision.value++
 }

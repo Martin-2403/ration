@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 
 import {
   localCounts,
@@ -21,6 +21,11 @@ import {
   type BackupEnvelope,
   type BackupPayload,
 } from '../backup/envelope'
+import { focusBackupForm } from '../backup/focus-export'
+import { lastBackupAt, lastExport } from '../backup/last-backup'
+import { isBackupStale } from '../backup/nudge'
+import { detectPlatform } from '../platform'
+import { isInstalled } from '../storage-persistence'
 
 const LABELS: Record<string, string> = {
   foods: 'Foods',
@@ -103,6 +108,72 @@ const mergedText = computed(() =>
     .join('; '),
 )
 
+/** Prose list: "a, b and c". */
+function joinList(items: string[]): string {
+  if (items.length < 2) return items[0] ?? ''
+
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+}
+
+/**
+ * How fresh the last backup of the log is, for the replace confirm. `now` is set
+ * when the confirm opens and again when a backup is recorded, never read at render.
+ * Reactive through `lastBackupAt()`, so an export made on this same page updates it.
+ */
+const now = ref(Date.now())
+const lastLogBackup = computed(() => lastBackupAt())
+
+const confirmHeading = ref<HTMLElement>()
+
+/**
+ * An export finished while a replace is waiting for its confirmation: bring the
+ * confirm back into view and put focus on its heading, so the user lands where they
+ * left off. Nothing is activated. Watches any export, not only one with the log,
+ * because it is the export form the user came from that has just finished.
+ */
+watch(
+  () => lastExport()?.at,
+  async () => {
+    now.value = Date.now()
+    if (!payload.value || mode.value !== 'replace') return
+
+    await nextTick()
+    confirmHeading.value?.scrollIntoView?.({ block: 'start' })
+    confirmHeading.value?.focus({ preventScroll: true })
+  },
+)
+
+function ago(at: number): string {
+  const minutes = Math.floor(Math.max(0, now.value - at) / 60_000)
+  const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+
+  // Zero seconds, worded by the browser's language ("now" in English).
+  if (minutes < 1) return relative.format(0, 'second')
+  if (minutes < 60) return relative.format(-minutes, 'minute')
+  if (minutes < 24 * 60) return relative.format(-Math.floor(minutes / 60), 'hour')
+
+  return relative.format(-Math.floor(minutes / (24 * 60)), 'day')
+}
+
+const lastBackupText = computed(() => {
+  const at = lastLogBackup.value
+  if (at === undefined) return 'never'
+
+  const date = new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+
+  return `${ago(at)} (${date})`
+})
+
+/** The rule the backup prompt uses, so the two never disagree about "overdue". */
+const backupStale = computed(() =>
+  isBackupStale({
+    now: now.value,
+    lastBackupAt: lastLogBackup.value,
+    installed: isInstalled(),
+    platform: detectPlatform(),
+  }),
+)
+
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
 
 function reset() {
@@ -173,6 +244,7 @@ async function open() {
     current.value = await localCounts(Object.keys(incoming.value))
     mergePlan.value = await previewMerge(opened)
     skipped.value = unknownClasses(opened)
+    now.value = Date.now()
     replaceBlocked.value = await replaceProblem(opened)
     payload.value = opened
   } catch (error) {
@@ -285,7 +357,7 @@ function dismiss() {
     </template>
 
     <section v-else class="confirm" aria-labelledby="restore-confirm-heading">
-      <h4 id="restore-confirm-heading">Restore this backup</h4>
+      <h4 id="restore-confirm-heading" ref="confirmHeading" tabindex="-1">Restore this backup</h4>
 
       <fieldset class="modes" :disabled="busy">
         <legend>How to restore it</legend>
@@ -392,7 +464,7 @@ function dismiss() {
 
         <p class="warning" data-testid="restore-warning">
           <template v-if="summaryRows.length">
-            The {{ summaryRows.map((row) => row.label.toLowerCase()).join(', ') }}
+            The {{ joinList(summaryRows.map((row) => row.label.toLowerCase())) }}
             {{ plural(summaryRows.length, 'on this device is', 'on this device are') }} replaced by
             the backup’s. Anything saved here that the backup does not hold is lost, and this cannot
             be undone.
@@ -405,8 +477,32 @@ function dismiss() {
           {{ replaceBlocked }} Merging this backup is still possible.
         </p>
 
+        <div
+          class="note freshness"
+          data-testid="restore-last-backup"
+          :data-stale="backupStale || undefined"
+        >
+          <p>Last backup of this device’s log: {{ lastBackupText }}.</p>
+          <p v-if="lastLogBackup === undefined">
+            Anything saved here will be lost unless the backup holds it, and there is no way back.
+          </p>
+          <p v-else-if="backupStale">
+            Anything saved here since then will be lost, and there is no way back.
+          </p>
+          <p v-else>Anything saved here since then is not in it, and a replace cannot be undone.</p>
+        </div>
+
         <div class="actions">
           <button type="button" class="ghost" :disabled="busy" @click="reset">Cancel</button>
+          <button
+            type="button"
+            class="ghost"
+            data-testid="restore-backup-first"
+            :disabled="busy"
+            @click="focusBackupForm"
+          >
+            Back up this device first
+          </button>
           <button
             type="button"
             class="danger"
@@ -521,6 +617,15 @@ input:hover {
   padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
+}
+
+.freshness {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.freshness p {
+  margin: 0;
 }
 
 .modes {

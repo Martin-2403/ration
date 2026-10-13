@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 
 import { BACKUP_CLASSES, collectBackup, countClasses, type CollectedClass } from '../backup/collect'
 import { encryptBackup } from '../backup/envelope'
 import { backupFileName, canShareFile, handOffBackup, type HandOff } from '../backup/hand-off'
+import { BACKUP_FORM_ID, BACKUP_PASSPHRASE_ID } from '../backup/focus-export'
 import { lastExport, lastLogExport, recordBackup } from '../backup/last-backup'
 import { checkPassphrase } from '../backup/passphrase'
 
@@ -174,7 +175,7 @@ function discard() {
 </script>
 
 <template>
-  <form class="export" :aria-busy="busy || undefined" @submit.prevent="backUp">
+  <form :id="BACKUP_FORM_ID" class="export" :aria-busy="busy || undefined" @submit.prevent="backUp">
     <h3>Back up now</h3>
 
     <p class="hint">
@@ -196,9 +197,9 @@ function discard() {
     </fieldset>
 
     <div class="field">
-      <label for="backup-passphrase">Passphrase</label>
+      <label :for="BACKUP_PASSPHRASE_ID">Passphrase</label>
       <input
-        id="backup-passphrase"
+        :id="BACKUP_PASSPHRASE_ID"
         v-model="passphrase"
         type="password"
         autocomplete="new-password"
