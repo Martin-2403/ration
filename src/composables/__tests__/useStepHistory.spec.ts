@@ -1,11 +1,27 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useStepHistory } from '../useStepHistory'
 
-/** history.go resolves on a later task in jsdom, as in a browser. */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+/**
+ * history.go and history.back resolve on a later task in jsdom, as in a browser,
+ * and report it with a popstate. Take the promise *before* causing the traversal
+ * and await it after: the composable's own listener was added earlier, so by the
+ * time this resolves it has already reacted. A fixed sleep here is a race
+ * against the runner (#136).
+ */
+const nextPopstate = () =>
+  new Promise<void>((resolve) =>
+    window.addEventListener('popstate', () => resolve(), { once: true }),
+  )
+
+/** Runs `move` and resolves once the traversal it started has been reported. */
+async function traversing(move: () => void) {
+  const popped = nextPopstate()
+  move()
+  await popped
+}
 
 const depth = ref(0)
 const backs = ref(0)
@@ -31,13 +47,15 @@ const step = () => history.state?.rationStep ?? 0
 /** Unwind whatever a previous test left, so each starts on a clean entry. */
 async function reset() {
   for (let i = 0; i < 5 && history.state?.rationStep; i++) {
-    history.back()
-    await settle()
+    await traversing(() => history.back())
   }
 }
 
 beforeEach(async () => {
   await reset()
+  // Something to go back to: history.back() on the first entry fires no popstate,
+  // and a test that leaves the route for good has to land somewhere.
+  history.pushState(null, '')
   history.replaceState({ position: 7, current: '/log' }, '')
   depth.value = 0
   backs.value = 0
@@ -64,12 +82,10 @@ describe('useStepHistory', () => {
     depth.value = 2
     await flushPromises()
 
-    history.back()
-    await settle()
+    await traversing(() => history.back())
     expect([backs.value, depth.value, step()]).toEqual([1, 1, 1])
 
-    history.back()
-    await settle()
+    await traversing(() => history.back())
     expect([backs.value, depth.value, step()]).toEqual([2, 0, 0])
     wrapper.unmount()
   })
@@ -79,10 +95,8 @@ describe('useStepHistory', () => {
     depth.value = 1
     await flushPromises()
 
-    history.back()
-    await settle()
-    history.back()
-    await settle()
+    await traversing(() => history.back())
+    await traversing(() => history.back())
 
     expect(backs.value).toBe(1)
     expect(depth.value).toBe(0)
@@ -94,12 +108,10 @@ describe('useStepHistory', () => {
     depth.value = 2
     await flushPromises()
 
-    depth.value = 1
-    await settle()
+    await traversing(() => (depth.value = 1))
     expect([backs.value, step()]).toEqual([0, 1])
 
-    depth.value = 0
-    await settle()
+    await traversing(() => (depth.value = 0))
     expect([backs.value, step()]).toEqual([0, 0])
     wrapper.unmount()
   })
@@ -109,8 +121,7 @@ describe('useStepHistory', () => {
     depth.value = 2
     await flushPromises()
 
-    depth.value = 0
-    await settle()
+    await traversing(() => (depth.value = 0))
 
     expect([backs.value, step()]).toEqual([0, 0])
     wrapper.unmount()
@@ -121,10 +132,11 @@ describe('useStepHistory', () => {
     depth.value = 2
     await flushPromises()
 
+    const rewound = nextPopstate()
     depth.value = 0
     await flushPromises()
     depth.value = 1
-    await settle()
+    await rewound
 
     expect(step()).toBe(1)
     wrapper.unmount()
@@ -133,8 +145,8 @@ describe('useStepHistory', () => {
   it('drops entries a previous visit left behind on mount', async () => {
     history.pushState({ position: 7, current: '/log', rationStep: 1 }, '')
     history.pushState({ position: 7, current: '/log', rationStep: 2 }, '')
-    const wrapper = mountHost()
-    await settle()
+    let wrapper!: ReturnType<typeof mountHost>
+    await traversing(() => (wrapper = mountHost()))
 
     expect(step()).toBe(0)
     expect(backs.value).toBe(0)
@@ -147,8 +159,7 @@ describe('useStepHistory', () => {
     await flushPromises()
     wrapper.unmount()
 
-    history.back()
-    await settle()
+    await traversing(() => history.back())
 
     expect(backs.value).toBe(0)
   })
@@ -158,14 +169,13 @@ describe('useStepHistory', () => {
     // fires no popstate, so nothing would otherwise clear `rewinding`.
     history.replaceState({ position: 7, current: '/log', rationStep: 99 }, '')
     const wrapper = mountHost()
-    await settle()
 
     // Longer than the fallback that stands in for the popstate that never comes.
+    // Not a race: the fallback's timer was set first, so it fires first.
     await new Promise((resolve) => setTimeout(resolve, 250))
     depth.value = 1
-    await settle()
+    await vi.waitFor(() => expect(step()).toBe(1))
 
-    expect(step()).toBe(1)
     wrapper.unmount()
   })
 
@@ -174,8 +184,7 @@ describe('useStepHistory', () => {
     depth.value = 2
     await flushPromises()
 
-    history.go(-2)
-    await settle()
+    await traversing(() => history.go(-2))
 
     expect(depth.value).toBe(0)
     expect(backs.value).toBe(2)
