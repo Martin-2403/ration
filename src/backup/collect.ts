@@ -3,8 +3,9 @@
  *
  * The rows go in exactly as stored: no restamping, no id remapping, no cleanup.
  * `updatedAt` is the write time that last-write-wins on restore depends on, and a
- * log entry's auto-increment id is what a restore matches it by, so a backup
- * that touched either would corrupt the very merge it exists for.
+ * log entry's createdAt, timestamp and name are what a merge recognises it by
+ * (apply.ts), so a backup that touched either would corrupt the very merge it
+ * exists for.
  *
  * Reading is separate from encrypting (envelope.ts) and from writing back
  * (restore); this module only knows which table each class name maps to.
