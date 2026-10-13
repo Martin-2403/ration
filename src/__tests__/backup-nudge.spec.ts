@@ -5,6 +5,7 @@ import {
   IOS_TAB_BACKUP_MAX_AGE_MS,
   MIN_DATA_AGE_MS,
   SNOOZE_MS,
+  isBackupStale,
   shouldNudge,
   type NudgeInput,
 } from '../backup/nudge'
@@ -133,6 +134,42 @@ describe('shouldNudge', () => {
         shouldNudge(input({ platform: 'ios', lastBackupAt: undefined, lastSnoozedAt: NOW - 1000 })),
       ).toBeUndefined()
     })
+  })
+})
+
+describe('isBackupStale', () => {
+  const stale = (over: Partial<NudgeInput> = {}) => isBackupStale(input(over))
+
+  it('is stale with no backup, and at the cadence but not before it', () => {
+    expect(stale({ lastBackupAt: undefined })).toBe(true)
+    expect(stale({ lastBackupAt: NOW - BACKUP_MAX_AGE_MS + 1 })).toBe(false)
+    expect(stale({ lastBackupAt: NOW - BACKUP_MAX_AGE_MS })).toBe(true)
+  })
+
+  it('uses the shorter cadence in an iOS tab only: 18 hours is stale there, not elsewhere', () => {
+    const eighteenHours = NOW - 18 * 60 * 60 * 1000
+
+    expect(stale({ lastBackupAt: eighteenHours, platform: 'ios', installed: false })).toBe(true)
+    expect(stale({ lastBackupAt: eighteenHours, platform: 'ios', installed: true })).toBe(false)
+    expect(stale({ lastBackupAt: eighteenHours, platform: 'other' })).toBe(false)
+  })
+
+  it('treats a backup dated in the future as recent', () => {
+    expect(stale({ lastBackupAt: NOW + 1000 })).toBe(false)
+  })
+
+  it('agrees with shouldNudge on every side of the cadence', () => {
+    for (const platform of ['ios', 'other'] as const) {
+      for (const lastBackupAt of [
+        undefined,
+        NOW - 1000,
+        NOW - IOS_TAB_BACKUP_MAX_AGE_MS,
+        NOW - BACKUP_MAX_AGE_MS,
+      ]) {
+        const over = { platform, lastBackupAt }
+        expect(shouldNudge(input(over)) !== undefined).toBe(stale(over))
+      }
+    }
   })
 })
 

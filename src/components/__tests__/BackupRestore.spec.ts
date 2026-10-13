@@ -348,6 +348,7 @@ describe('the safety backup before a replace (#153)', () => {
 
   afterEach(() => {
     mounted.splice(0).forEach((wrapper) => wrapper.unmount())
+    Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -392,6 +393,31 @@ describe('the safety backup before a replace (#153)', () => {
     expect(line(wrapper).text()).toContain('Anything saved here since then will be lost')
     expect(line(wrapper).text()).toContain('no way back')
     expect(line(wrapper).attributes('data-stale')).toBeDefined()
+  })
+
+  it('uses the iOS-tab cadence the prompt uses: 18 hours is overdue there, not elsewhere', async () => {
+    recordBackup(['logEntries'], NOW - 18 * HOUR)
+    const elsewhere = await replaceConfirm()
+    expect(line(elsewhere).attributes('data-stale')).toBeUndefined()
+
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1',
+    )
+    const iosTab = await replaceConfirm()
+
+    expect(line(iosTab).text()).toContain('18 hours ago')
+    expect(line(iosTab).attributes('data-stale')).toBeDefined()
+    expect(line(iosTab).text()).toContain('no way back')
+  })
+
+  it('words a backup made this minute with the browser’s own "now"', async () => {
+    recordBackup(['logEntries'], NOW - 20_000)
+    const wrapper = await replaceConfirm()
+
+    expect(line(wrapper).text()).toContain(
+      `log: ${new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(0, 'second')} (`,
+    )
+    expect(line(wrapper).text()).not.toContain('just now')
   })
 
   it('does not count an export that left the log out', async () => {
@@ -489,6 +515,9 @@ describe('the safety backup before a replace (#153)', () => {
       URL.createObjectURL = vi.fn(() => 'blob:ration')
       URL.revokeObjectURL = vi.fn()
       vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      // jsdom has no scrollIntoView; the page calls it on the confirm heading.
+      const scrolled = vi.fn()
+      Element.prototype.scrollIntoView = scrolled
       const wrapper = await openedPage()
       expect(line(wrapper).text()).toContain('log: never.')
 
@@ -499,14 +528,32 @@ describe('the safety backup before a replace (#153)', () => {
       await flushPromises()
 
       expect(lastBackupAt()).toBe(NOW)
-      expect(line(wrapper).text()).toContain('Last backup of this device’s log: just now (')
+      expect(line(wrapper).text()).toContain('Last backup of this device’s log: now (')
       expect(line(wrapper).attributes('data-stale')).toBeUndefined()
+      // The user lands back on the confirm, with nothing activated.
+      expect(scrolled).toHaveBeenCalled()
+      expect(document.activeElement?.id).toBe('restore-confirm-heading')
+      expect(await db.foods.get('local-food')).toBeDefined()
       // The opened backup is still there, and the replace is still the same single step.
       expect(wrapper.find('[data-testid=restore-summary]').exists()).toBe(true)
 
       await buttonByText(wrapper, 'Replace my data')!.trigger('click')
       await vi.waitFor(() => expect(wrapper.find('[data-testid=restore-done]').exists()).toBe(true))
       expect((await db.foods.toArray()).map((f) => f.id).sort()).toEqual(['milk', 'oats'])
+    })
+
+    it('does not move anything when an export finishes with no restore open', async () => {
+      const scrolled = vi.fn()
+      Element.prototype.scrollIntoView = scrolled
+      const wrapper = mount(Page, { attachTo: document.body })
+      mounted.push(wrapper)
+      await flushPromises()
+
+      recordBackup(['logEntries'], NOW)
+      await flushPromises()
+
+      expect(scrolled).not.toHaveBeenCalled()
+      expect(document.activeElement?.id).not.toBe('restore-confirm-heading')
     })
   })
 })

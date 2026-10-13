@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 
 import {
   localCounts,
@@ -22,8 +22,10 @@ import {
   type BackupPayload,
 } from '../backup/envelope'
 import { focusBackupForm } from '../backup/focus-export'
-import { lastBackupAt } from '../backup/last-backup'
-import { BACKUP_MAX_AGE_MS } from '../backup/nudge'
+import { lastBackupAt, lastExport } from '../backup/last-backup'
+import { isBackupStale } from '../backup/nudge'
+import { detectPlatform } from '../platform'
+import { isInstalled } from '../storage-persistence'
 
 const LABELS: Record<string, string> = {
   foods: 'Foods',
@@ -121,15 +123,32 @@ function joinList(items: string[]): string {
 const now = ref(Date.now())
 const lastLogBackup = computed(() => lastBackupAt())
 
-watch(lastLogBackup, () => {
-  now.value = Date.now()
-})
+const confirmHeading = ref<HTMLElement>()
+
+/**
+ * An export finished while a replace is waiting for its confirmation: bring the
+ * confirm back into view and put focus on its heading, so the user lands where they
+ * left off. Nothing is activated. Watches any export, not only one with the log,
+ * because it is the export form the user came from that has just finished.
+ */
+watch(
+  () => lastExport()?.at,
+  async () => {
+    now.value = Date.now()
+    if (!payload.value || mode.value !== 'replace') return
+
+    await nextTick()
+    confirmHeading.value?.scrollIntoView?.({ block: 'start' })
+    confirmHeading.value?.focus({ preventScroll: true })
+  },
+)
 
 function ago(at: number): string {
   const minutes = Math.floor(Math.max(0, now.value - at) / 60_000)
   const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
 
-  if (minutes < 1) return 'just now'
+  // Zero seconds, worded by the browser's language ("now" in English).
+  if (minutes < 1) return relative.format(0, 'second')
   if (minutes < 60) return relative.format(-minutes, 'minute')
   if (minutes < 24 * 60) return relative.format(-Math.floor(minutes / 60), 'hour')
 
@@ -145,9 +164,14 @@ const lastBackupText = computed(() => {
   return `${ago(at)} (${date})`
 })
 
-/** No backup of the log, or one older than the cadence the backup prompt uses. */
-const backupStale = computed(
-  () => lastLogBackup.value === undefined || now.value - lastLogBackup.value >= BACKUP_MAX_AGE_MS,
+/** The rule the backup prompt uses, so the two never disagree about "overdue". */
+const backupStale = computed(() =>
+  isBackupStale({
+    now: now.value,
+    lastBackupAt: lastLogBackup.value,
+    installed: isInstalled(),
+    platform: detectPlatform(),
+  }),
 )
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
@@ -333,7 +357,7 @@ function dismiss() {
     </template>
 
     <section v-else class="confirm" aria-labelledby="restore-confirm-heading">
-      <h4 id="restore-confirm-heading">Restore this backup</h4>
+      <h4 id="restore-confirm-heading" ref="confirmHeading" tabindex="-1">Restore this backup</h4>
 
       <fieldset class="modes" :disabled="busy">
         <legend>How to restore it</legend>

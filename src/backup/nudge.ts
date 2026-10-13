@@ -91,14 +91,30 @@ export interface NudgeInput {
   platform: 'ios' | 'other'
 }
 
+const inIosTab = (platform: NudgeInput['platform'], installed: boolean) =>
+  platform === 'ios' && !installed
+
+/**
+ * Whether the last backup of the log is overdue: there is none, or it is at least
+ * as old as the cadence for this kind of device. The one rule behind both the
+ * prompt and the restore confirm's wording, so they never disagree. A backup
+ * dated in the future (the clock moved back) counts as recent.
+ */
+export function isBackupStale(
+  input: Pick<NudgeInput, 'now' | 'lastBackupAt' | 'installed' | 'platform'>,
+): boolean {
+  const { now, lastBackupAt, installed, platform } = input
+  const maxAge = inIosTab(platform, installed) ? IOS_TAB_BACKUP_MAX_AGE_MS : BACKUP_MAX_AGE_MS
+
+  return lastBackupAt === undefined || now - lastBackupAt >= maxAge
+}
+
 /** Undefined means: say nothing. */
 export function shouldNudge(input: NudgeInput): NudgeVariant | undefined {
   const { now, lastBackupAt, oldestEntryAt, lastSnoozedAt, installed, platform } = input
-  const iosTab = platform === 'ios' && !installed
+  const iosTab = inIosTab(platform, installed)
 
-  const maxAge = iosTab ? IOS_TAB_BACKUP_MAX_AGE_MS : BACKUP_MAX_AGE_MS
-
-  if (lastBackupAt !== undefined && now - lastBackupAt < maxAge) return undefined
+  if (!isBackupStale(input)) return undefined
 
   // A snooze stamped in the future (the clock moved back) is ignored rather than
   // honoured: asking once too often is the safe way to be wrong.
