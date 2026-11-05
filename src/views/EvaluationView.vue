@@ -124,6 +124,13 @@ const hasAnyTarget = computed(() =>
   padding: var(--space-5) var(--space-4) var(--space-7);
 }
 
+/* A grid item is min-width: auto, so a child too wide for the column widens
+   the column rather than shrinking — the log screen's #102 and the day
+   screen's #109, guarded here before a wide row can trigger it (#114). */
+.page > * {
+  min-width: 0;
+}
+
 header {
   display: flex;
   align-items: center;
