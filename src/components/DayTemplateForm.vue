@@ -42,6 +42,12 @@ const emit = defineEmits<{
   /** The same day, corrected. */
   updated: [template: NewDayTemplate]
   cancel: []
+  /**
+   * Whether a save is in flight, and when it clears: see MealTemplateForm for
+   * why a host needs it. `false` comes only from a failed save; the host
+   * clears it after a successful one (#117).
+   */
+  busy: [value: boolean]
 }>()
 
 const name = ref(draft?.name ?? '')
@@ -129,6 +135,7 @@ async function save() {
   if (!canSave.value) return
 
   saving.value = true
+  emit('busy', true)
 
   const template: NewDayTemplate = {
     id,
@@ -149,8 +156,14 @@ async function save() {
     // per event, so a union of the two names satisfies neither.
     if (existing) emit('updated', template)
     else emit('saved', template)
-  } finally {
+  } catch (error) {
+    // Only a failed save hands the form back. After a successful one `saving`
+    // and `busy` stay set: the host reloads and then leaves this form, and
+    // clearing them here would open a window in which Cancel or the host's own
+    // Back still works and its step would be overridden a moment later (#117).
     saving.value = false
+    emit('busy', false)
+    throw error
   }
 }
 </script>
@@ -227,7 +240,7 @@ async function save() {
       <!-- A blocked save always names what is missing. -->
       <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
 
-      <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
+      <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">Cancel</button>
       <button type="button" :disabled="!canSave" @click="save">
         {{ existing ? 'Save the changes' : 'Save the day' }}
       </button>

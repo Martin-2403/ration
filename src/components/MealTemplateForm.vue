@@ -34,6 +34,17 @@ const emit = defineEmits<{
   /** The same meal, corrected. */
   updated: [template: NewMealTemplate]
   cancel: []
+  /**
+   * Whether a save is in flight. The host holds its own way out disabled
+   * while it is: leaving unmounts this form, and an emit from an unmounted
+   * instance is never delivered, so `saved`/`updated` would be lost and the
+   * list would not reload (#117).
+   *
+   * `true` is emitted when the save starts. `false` is emitted only when it
+   * fails; after `saved`/`updated` the host owns clearing it, once whatever
+   * it does in response (a reload) has finished.
+   */
+  busy: [value: boolean]
 }>()
 
 interface DraftSlot {
@@ -135,6 +146,10 @@ async function save() {
   if (!canSave.value) return
 
   saving.value = true
+  // Emitted inline rather than from a watcher on `saving`, for the reason
+  // spelled out in MealBuilder's logMeal: a watcher runs a microtask late,
+  // after the host may already have unmounted this instance.
+  emit('busy', true)
 
   const template: NewMealTemplate = {
     id,
@@ -167,8 +182,14 @@ async function save() {
     // per event, so a union of the two names satisfies neither.
     if (draft) emit('updated', template)
     else emit('saved', template)
-  } finally {
+  } catch (error) {
+    // Only a failed save hands the form back. After a successful one `saving`
+    // and `busy` stay set: the host reloads and then leaves this form, and
+    // clearing them here would open a window in which Cancel or the host's own
+    // Back still works and its step would be overridden a moment later (#117).
     saving.value = false
+    emit('busy', false)
+    throw error
   }
 }
 </script>
@@ -258,7 +279,9 @@ async function save() {
           {{ problems.join(' · ') }}
         </p>
 
-        <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
+        <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">
+          Cancel
+        </button>
         <button type="button" :disabled="!canSave" @click="save">
           {{ draft ? 'Save the changes' : 'Save the meal' }}
         </button>

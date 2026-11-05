@@ -1036,6 +1036,210 @@ describe('LogView', () => {
     expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
   })
 
+  describe('a write that is still in flight (#117)', () => {
+    /**
+     * Leaving a branch unmounts the child that is writing, and Vue never
+     * delivers an emit from an unmounted instance — so the write lands but
+     * `logged`/`saved`/`updated` is lost. Each branch holds every way out
+     * disabled instead; these hold the write open to look at that window.
+     */
+    const gate = () => {
+      let release!: () => void
+      const open = new Promise<void>((resolve) => (release = resolve))
+
+      return { open, release }
+    }
+
+    const disabled = (wrapper: Awaited<ReturnType<typeof render>>, selector: string) =>
+      wrapper.find(selector).attributes('disabled') !== undefined
+
+    const startPorridge = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+      await openMeals(wrapper)
+      await optionNamed(wrapper, 'Porridge').trigger('click')
+      await flushPromises()
+    }
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('holds Back and the date disabled while a meal is being logged, and still confirms it', async () => {
+      const pending = gate()
+      const store = useLogStore()
+      const real = store.logMeal
+      vi.spyOn(store, 'logMeal').mockImplementation(async (entry) => {
+        await pending.open
+        return real(entry)
+      })
+
+      const wrapper = await render()
+      await startPorridge(wrapper)
+      await buttonNamed(wrapper, 'Log meal').trigger('click')
+
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      pending.release()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Logged Porridge'))
+      expect(await db.logEntries.count()).toBe(1)
+    })
+
+    it('does not leave Back disabled when the screen is left by a native back mid-write', async () => {
+      const pending = gate()
+      const store = useLogStore()
+      const real = store.logMeal
+      vi.spyOn(store, 'logMeal').mockImplementation(async (entry) => {
+        await pending.open
+        return real(entry)
+      })
+
+      const wrapper = await render()
+      await startPorridge(wrapper)
+      await buttonNamed(wrapper, 'Log meal').trigger('click')
+      expect(disabled(wrapper, '.back')).toBe(true)
+
+      // A gesture cannot be disabled. The builder goes with it, and its own
+      // `busy: false` is dropped as well, so the view has to clear the flag.
+      history.back()
+      await vi.waitFor(() => expect(wrapper.text()).not.toContain('Log meal'))
+      expect(disabled(wrapper, '.back')).toBe(false)
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+
+      pending.release()
+      await flushPromises()
+    })
+
+    it('holds Back, Cancel and the date disabled while a corrected meal is being saved', async () => {
+      await mealTemplates.put({
+        id: 'lunch',
+        name: 'Cheese sandwich',
+        slots: [
+          {
+            id: 'bread',
+            label: 'Bread',
+            kind: 'fixed',
+            options: ['oats'],
+            defaultOptionId: 'oats',
+            defaultGrams: 80,
+          },
+        ],
+      })
+      const pending = gate()
+      const real = mealTemplates.put
+      vi.spyOn(mealTemplates, 'put').mockImplementation(async (template) => {
+        await pending.open
+        return real(template)
+      })
+
+      const wrapper = await render()
+      await openMeals(wrapper)
+      await labelled(wrapper, 'Edit Cheese sandwich').trigger('click')
+      await flushPromises()
+
+      // Armed once the form is open, so only the reload after the save is held.
+      const reload = gate()
+      const realList = mealTemplates.list
+      const listing = vi.spyOn(mealTemplates, 'list').mockImplementation(async () => {
+        await reload.open
+        return realList()
+      })
+
+      await wrapper.find('#template-name').setValue('Cheese toastie')
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      // The write has landed and the list is still being read. The form is
+      // on screen, and the ways out must still be shut: a Back tapped here
+      // would be overridden when the reload finishes.
+      pending.release()
+      await vi.waitFor(() => expect(listing).toHaveBeenCalled())
+      await flushPromises()
+      expect(wrapper.find('#template-name').exists()).toBe(true)
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      reload.release()
+      // The list reloads from the write that was in flight, rather than
+      // showing the row as it was before it.
+      await vi.waitFor(() => expect(optionNamed(wrapper, 'Cheese toastie')).toBeDefined())
+      expect(wrapper.find('#template-name').exists()).toBe(false)
+      expect(disabled(wrapper, '.back')).toBe(false)
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+    })
+
+    it('holds Back, Cancel and the date disabled while a corrected day is being saved', async () => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+      const pending = gate()
+      const real = dayTemplates.put
+      vi.spyOn(dayTemplates, 'put').mockImplementation(async (template) => {
+        await pending.open
+        return real(template)
+      })
+
+      const wrapper = await render()
+      await openDays(wrapper)
+      await labelled(wrapper, 'Edit Workday').trigger('click')
+      await flushPromises()
+
+      const reload = gate()
+      const realList = dayTemplates.list
+      const listing = vi.spyOn(dayTemplates, 'list').mockImplementation(async () => {
+        await reload.open
+        return realList()
+      })
+
+      await wrapper.find('#day-name').setValue('Office day')
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      // Same window as for a meal: written, reloading, form still showing.
+      pending.release()
+      await vi.waitFor(() => expect(listing).toHaveBeenCalled())
+      await flushPromises()
+      expect(wrapper.find('#day-name').exists()).toBe(true)
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      reload.release()
+      await vi.waitFor(() => expect(optionNamed(wrapper, 'Office day')).toBeDefined())
+      expect(wrapper.find('#day-name').exists()).toBe(false)
+      expect(disabled(wrapper, '.back')).toBe(false)
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+    })
+
+    it('does not leave Back disabled when the reload after a save fails', async () => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+
+      const wrapper = await render()
+      await openDays(wrapper)
+      await labelled(wrapper, 'Edit Workday').trigger('click')
+      await flushPromises()
+
+      vi.spyOn(dayTemplates, 'list').mockRejectedValue(new Error('read failed'))
+      await wrapper.find('#day-name').setValue('Office day')
+      // The rejection surfaces through Vue's error handling; only the flag is
+      // under test, so it is swallowed rather than failing the run.
+      wrapper.vm.$.appContext.config.errorHandler = () => {}
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      // The write lands first, then the reload rejects and the flag is released.
+      await vi.waitFor(async () =>
+        expect((await db.dayTemplates.get('workday'))?.name).toBe('Office day'),
+      )
+      await vi.waitFor(() => expect(disabled(wrapper, '.back')).toBe(false))
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+      expect(wrapper.find('#day-name').exists()).toBe(true)
+    })
+  })
+
   describe('backup prompt (#147)', () => {
     const logPorridge = async (wrapper: Awaited<ReturnType<typeof render>>) => {
       await openMeals(wrapper)
