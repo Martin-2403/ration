@@ -185,9 +185,7 @@ input {
    gaps, and the widest word of the state text), and the card sits inside 5rem of
    page and card padding — so the row only fits from about 37rem of viewport.
    Below 38rem it stacks instead of pushing the buttons out of the card or off the
-   side of a phone — this is a PWA first (§2). The breakpoint used to be 30rem,
-   which left 30–37rem overflowing: the page widened before the shell was
-   guarded (#114), and the row would spill out of the card now it is. */
+   side of a phone — this is a PWA first (§2). */
 @media (max-width: 38rem) {
   .row {
     grid-template-columns: 1fr 2.5rem 4rem 4rem;
