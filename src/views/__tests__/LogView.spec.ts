@@ -1136,6 +1136,14 @@ describe('LogView', () => {
       await labelled(wrapper, 'Edit Cheese sandwich').trigger('click')
       await flushPromises()
 
+      // Armed once the form is open, so only the reload after the save is held.
+      const reload = gate()
+      const realList = mealTemplates.list
+      const listing = vi.spyOn(mealTemplates, 'list').mockImplementation(async () => {
+        await reload.open
+        return realList()
+      })
+
       await wrapper.find('#template-name').setValue('Cheese toastie')
       await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
@@ -1143,11 +1151,24 @@ describe('LogView', () => {
       expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
+      // The write has landed and the list is still being read. The form is
+      // on screen, and the ways out must still be shut: a Back tapped here
+      // would be overridden when the reload finishes.
       pending.release()
+      await vi.waitFor(() => expect(listing).toHaveBeenCalled())
+      await flushPromises()
+      expect(wrapper.find('#template-name').exists()).toBe(true)
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      reload.release()
       // The list reloads from the write that was in flight, rather than
       // showing the row as it was before it.
       await vi.waitFor(() => expect(optionNamed(wrapper, 'Cheese toastie')).toBeDefined())
+      expect(wrapper.find('#template-name').exists()).toBe(false)
       expect(disabled(wrapper, '.back')).toBe(false)
+      expect(disabled(wrapper, '#log-date')).toBe(false)
     })
 
     it('holds Back, Cancel and the date disabled while a corrected day is being saved', async () => {
@@ -1164,6 +1185,13 @@ describe('LogView', () => {
       await labelled(wrapper, 'Edit Workday').trigger('click')
       await flushPromises()
 
+      const reload = gate()
+      const realList = dayTemplates.list
+      const listing = vi.spyOn(dayTemplates, 'list').mockImplementation(async () => {
+        await reload.open
+        return realList()
+      })
+
       await wrapper.find('#day-name').setValue('Office day')
       await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
@@ -1171,9 +1199,44 @@ describe('LogView', () => {
       expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
+      // Same window as for a meal: written, reloading, form still showing.
       pending.release()
+      await vi.waitFor(() => expect(listing).toHaveBeenCalled())
+      await flushPromises()
+      expect(wrapper.find('#day-name').exists()).toBe(true)
+      expect(disabled(wrapper, '.back')).toBe(true)
+      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+      expect(disabled(wrapper, '#log-date')).toBe(true)
+
+      reload.release()
       await vi.waitFor(() => expect(optionNamed(wrapper, 'Office day')).toBeDefined())
+      expect(wrapper.find('#day-name').exists()).toBe(false)
       expect(disabled(wrapper, '.back')).toBe(false)
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+    })
+
+    it('does not leave Back disabled when the reload after a save fails', async () => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+
+      const wrapper = await render()
+      await openDays(wrapper)
+      await labelled(wrapper, 'Edit Workday').trigger('click')
+      await flushPromises()
+
+      vi.spyOn(dayTemplates, 'list').mockRejectedValue(new Error('read failed'))
+      await wrapper.find('#day-name').setValue('Office day')
+      // The rejection surfaces through Vue's error handling; only the flag is
+      // under test, so it is swallowed rather than failing the run.
+      wrapper.vm.$.appContext.config.errorHandler = () => {}
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      // The write lands first, then the reload rejects and the flag is released.
+      await vi.waitFor(async () =>
+        expect((await db.dayTemplates.get('workday'))?.name).toBe('Office day'),
+      )
+      await vi.waitFor(() => expect(disabled(wrapper, '.back')).toBe(false))
+      expect(disabled(wrapper, '#log-date')).toBe(false)
+      expect(wrapper.find('#day-name').exists()).toBe(true)
     })
   })
 

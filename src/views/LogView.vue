@@ -89,13 +89,20 @@ const choice = ref<
 const outcome = ref<{ logged: boolean; what: string; date: string } | undefined>()
 
 /**
- * True while the form or builder on screen is mid-write.
+ * True while the form or builder on screen is mid-write, and for the reload
+ * that follows a saved template.
  *
  * Every way out of that branch is held disabled for as long as it is: leaving
  * unmounts the child, and Vue never delivers an emit from an unmounted
  * instance, so the write lands but `logged`/`saved`/`updated` is lost — no
  * confirmation, or a list that never reloads and a stale row whose next save
  * silently reverts it (#117, the same race as #108).
+ *
+ * Who clears it: MealBuilder emits `busy: false` itself when its write ends.
+ * The template and day forms emit it only when a save fails; after a
+ * successful one the handlers below clear it once their reload has finished
+ * and `choice` has moved on, since the form is still on screen until then.
+ * `watch(choice)` clears it too, for a step taken that no child could veto.
  */
 const busy = ref(false)
 
@@ -125,8 +132,14 @@ function finish(what: string, logged = true) {
  * it, and the list would make them find it again.
  */
 async function savedTemplate(template: NewMealTemplate) {
-  await loadTemplates()
-  choice.value = { kind: 'template', template }
+  try {
+    await loadTemplates()
+    choice.value = { kind: 'template', template }
+  } finally {
+    // Released here rather than by the form, so Back stays disabled through
+    // the reload; in a finally so a failed read cannot leave it stuck.
+    busy.value = false
+  }
 }
 
 /**
@@ -135,8 +148,12 @@ async function savedTemplate(template: NewMealTemplate) {
  * would read as though the fix had logged something (#101).
  */
 async function updatedTemplate() {
-  await loadTemplates()
-  choice.value = { kind: 'meals' }
+  try {
+    await loadTemplates()
+    choice.value = { kind: 'meals' }
+  } finally {
+    busy.value = false
+  }
 }
 
 /**
@@ -157,14 +174,22 @@ function finishDay(count: number) {
 
 /** Same reasoning for a day: whoever just described one is about to eat it. */
 async function savedDay(template: NewDayTemplate) {
-  await loadDays()
-  choice.value = { kind: 'day', template }
+  try {
+    await loadDays()
+    choice.value = { kind: 'day', template }
+  } finally {
+    busy.value = false
+  }
 }
 
 /** And the same for a correction: back to the days, having logged nothing. */
 async function updatedDay() {
-  await loadDays()
-  choice.value = { kind: 'days' }
+  try {
+    await loadDays()
+    choice.value = { kind: 'days' }
+  } finally {
+    busy.value = false
+  }
 }
 
 /**

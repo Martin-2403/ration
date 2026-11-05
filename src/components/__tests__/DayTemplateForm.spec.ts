@@ -338,7 +338,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
     })
   })
 
-  it('holds Cancel disabled, and says so, for as long as the save is in flight (#117)', async () => {
+  it('holds Cancel disabled and announces busy from the save, leaving the release to the host (#117)', async () => {
     const draft: NewDayTemplate = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
     const wrapper = await render(draft, true)
 
@@ -361,8 +361,10 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
     await flushPromises()
 
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
-    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+    // Not released here: the host reloads and then leaves the form, and owns
+    // clearing `busy` until it has. Cancel stays disabled for the same span.
+    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('busy')).toEqual([[true]])
   })
 
   it('stops announcing busy when the write fails, so nothing stays disabled forever', async () => {

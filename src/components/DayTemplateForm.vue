@@ -42,7 +42,11 @@ const emit = defineEmits<{
   /** The same day, corrected. */
   updated: [template: NewDayTemplate]
   cancel: []
-  /** Whether the save is in flight; see MealTemplateForm for why a host needs it (#117). */
+  /**
+   * Whether a save is in flight, and when it clears: see MealTemplateForm for
+   * why a host needs it. `false` comes only from a failed save; the host
+   * clears it after a successful one (#117).
+   */
   busy: [value: boolean]
 }>()
 
@@ -152,9 +156,14 @@ async function save() {
     // per event, so a union of the two names satisfies neither.
     if (existing) emit('updated', template)
     else emit('saved', template)
-  } finally {
+  } catch (error) {
+    // Only a failed save hands the form back. After a successful one `saving`
+    // and `busy` stay set: the host reloads and then leaves this form, and
+    // clearing them here would open a window in which Cancel or the host's own
+    // Back still works and its step would be overridden a moment later (#117).
     saving.value = false
     emit('busy', false)
+    throw error
   }
 }
 </script>
