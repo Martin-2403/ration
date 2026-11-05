@@ -181,9 +181,12 @@ input {
   grid-area: clear;
 }
 
-/* One row of six fixed columns needs about 30rem. Below that it stacks instead
-   of pushing the buttons off the side of a phone — this is a PWA first (§2). */
-@media (max-width: 30rem) {
+/* One row of six columns needs about 32rem of card (24rem of fixed tracks, five
+   gaps, and the widest word of the state text), and the card sits inside 5rem of
+   page and card padding — so the row only fits from about 37rem of viewport.
+   Below 38rem it stacks instead of pushing the buttons out of the card or off the
+   side of a phone — this is a PWA first (§2). */
+@media (max-width: 38rem) {
   .row {
     grid-template-columns: 1fr 2.5rem 4rem 4rem;
     grid-template-areas:
