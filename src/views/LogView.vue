@@ -88,6 +88,17 @@ const choice = ref<
  */
 const outcome = ref<{ logged: boolean; what: string; date: string } | undefined>()
 
+/**
+ * True while the form or builder on screen is mid-write.
+ *
+ * Every way out of that branch is held disabled for as long as it is: leaving
+ * unmounts the child, and Vue never delivers an emit from an unmounted
+ * instance, so the write lands but `logged`/`saved`/`updated` is lost — no
+ * confirmation, or a list that never reloads and a stale row whose next save
+ * silently reverts it (#117, the same race as #108).
+ */
+const busy = ref(false)
+
 const validDate = computed(() => localMiddayFromISODate(date.value) !== undefined)
 
 /**
@@ -203,6 +214,10 @@ async function removeDay(id: string) {
 watch(choice, () => {
   removingMealId.value = undefined
   removingDayId.value = undefined
+  // A step that leaves while a child is mid-write (a native back gesture, which
+  // cannot be disabled) takes the child's own `busy: false` with it, so this is
+  // the only thing that can clear the flag then.
+  busy.value = false
 })
 
 /**
@@ -298,7 +313,9 @@ async function logFood(food: NewFood, grams: number) {
     <section class="card">
       <div class="row">
         <label for="log-date">Eaten on</label>
-        <input id="log-date" v-model="date" type="date" :max="today" />
+        <!-- Disabled mid-write: clearing it makes the date invalid, and the
+             whole branch below goes with it (#117). -->
+        <input id="log-date" v-model="date" type="date" :max="today" :disabled="busy" />
       </div>
 
       <p v-if="!validDate" class="problem" role="status">Pick a date before logging.</p>
@@ -367,7 +384,7 @@ async function logFood(food: NewFood, grams: number) {
       </ul>
 
       <template v-else>
-        <button type="button" class="back" @click="goBack">← Back</button>
+        <button type="button" class="back" :disabled="busy" @click="goBack">← Back</button>
 
         <ul v-if="choice.kind === 'meals'" class="options">
           <li v-for="match in templates" :key="match.template.id">
@@ -545,6 +562,7 @@ async function logFood(food: NewFood, grams: number) {
           @saved="savedDay"
           @updated="updatedDay"
           @cancel="goBack"
+          @busy="busy = $event"
         />
 
         <MealBuilder
@@ -552,6 +570,7 @@ async function logFood(food: NewFood, grams: number) {
           :template="choice.template"
           :eaten-at="backdatedTo"
           @logged="finish(choice.kind === 'template' ? choice.template.name : '')"
+          @busy="busy = $event"
         />
 
         <FoodPicker v-else-if="choice.kind === 'stored'" @submit="logFood" />
@@ -571,6 +590,7 @@ async function logFood(food: NewFood, grams: number) {
           @saved="savedTemplate"
           @updated="updatedTemplate"
           @cancel="goBack"
+          @busy="busy = $event"
         />
 
         <FoodForm v-else @submit="logFood" />
@@ -789,9 +809,14 @@ input:hover {
   cursor: pointer;
 }
 
-.back:hover {
+.back:hover:not(:disabled) {
   color: var(--ink);
   border-color: var(--ink-soft);
+}
+
+.back:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Paired with text, never colour alone (§15). */

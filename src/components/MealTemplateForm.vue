@@ -34,6 +34,13 @@ const emit = defineEmits<{
   /** The same meal, corrected. */
   updated: [template: NewMealTemplate]
   cancel: []
+  /**
+   * Whether the save is in flight. The host holds its own way out disabled
+   * for the duration: leaving unmounts this form, and an emit from an
+   * unmounted instance is never delivered, so `saved`/`updated` would be
+   * lost and the list would not reload (#117).
+   */
+  busy: [value: boolean]
 }>()
 
 interface DraftSlot {
@@ -135,6 +142,10 @@ async function save() {
   if (!canSave.value) return
 
   saving.value = true
+  // Paired with `saving` inline rather than watched, for the reason spelled
+  // out in MealBuilder's logMeal: a watcher runs a microtask late, after the
+  // host may already have unmounted this instance.
+  emit('busy', true)
 
   const template: NewMealTemplate = {
     id,
@@ -169,6 +180,7 @@ async function save() {
     else emit('saved', template)
   } finally {
     saving.value = false
+    emit('busy', false)
   }
 }
 </script>
@@ -258,7 +270,9 @@ async function save() {
           {{ problems.join(' · ') }}
         </p>
 
-        <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
+        <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">
+          Cancel
+        </button>
         <button type="button" :disabled="!canSave" @click="save">
           {{ draft ? 'Save the changes' : 'Save the meal' }}
         </button>

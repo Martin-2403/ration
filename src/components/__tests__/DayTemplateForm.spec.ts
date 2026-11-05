@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -52,6 +52,11 @@ const addMeal = async (wrapper: Wrapper, id: string) => {
 const listFirstId = async () => (await listMealTemplates())[0]?.template.id
 
 const order = (wrapper: Wrapper) => wrapper.findAll('.meal-name').map((row) => row.text())
+
+// The repositories are shared module objects, so a spy outlives its test.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 beforeEach(async () => {
   await Promise.all([db.dayTemplates.clear(), db.mealTemplates.clear()])
@@ -331,5 +336,47 @@ describe('DayTemplateForm, correcting a saved day', () => {
 
       expect((await db.mealTemplates.toArray())[0]!.slots[0]!.defaultGrams).toBe(12.5)
     })
+  })
+
+  it('holds Cancel disabled, and says so, for as long as the save is in flight (#117)', async () => {
+    const draft: NewDayTemplate = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
+    const wrapper = await render(draft, true)
+
+    // Leaving mid-save unmounts the form, and an emit from an unmounted
+    // instance is never delivered: the write lands and `updated` is lost.
+    const real = dayTemplates.put
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.spyOn(dayTemplates, 'put').mockImplementation(async (template) => {
+      await gate
+      return real(template)
+    })
+
+    await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('busy')).toEqual([[true]])
+
+    release()
+    await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
+    await flushPromises()
+
+    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+  })
+
+  it('stops announcing busy when the write fails, so nothing stays disabled forever', async () => {
+    vi.spyOn(dayTemplates, 'put').mockRejectedValue(new Error('write failed'))
+    const wrapper = mount(DayTemplateForm, {
+      props: { draft: { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] } },
+      global: { config: { errorHandler: () => {} } },
+    })
+    await flushPromises()
+
+    await buttonNamed(wrapper, 'Save the day').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
   })
 })

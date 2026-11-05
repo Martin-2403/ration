@@ -42,6 +42,8 @@ const emit = defineEmits<{
   /** The same day, corrected. */
   updated: [template: NewDayTemplate]
   cancel: []
+  /** Whether the save is in flight; see MealTemplateForm for why a host needs it (#117). */
+  busy: [value: boolean]
 }>()
 
 const name = ref(draft?.name ?? '')
@@ -129,6 +131,7 @@ async function save() {
   if (!canSave.value) return
 
   saving.value = true
+  emit('busy', true)
 
   const template: NewDayTemplate = {
     id,
@@ -151,6 +154,7 @@ async function save() {
     else emit('saved', template)
   } finally {
     saving.value = false
+    emit('busy', false)
   }
 }
 </script>
@@ -227,7 +231,7 @@ async function save() {
       <!-- A blocked save always names what is missing. -->
       <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
 
-      <button type="button" class="ghost" @click="emit('cancel')">Cancel</button>
+      <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">Cancel</button>
       <button type="button" :disabled="!canSave" @click="save">
         {{ existing ? 'Save the changes' : 'Save the day' }}
       </button>
