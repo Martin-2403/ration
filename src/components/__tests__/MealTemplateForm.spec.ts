@@ -9,7 +9,14 @@ import type { MealTemplate, NewMealTemplate } from '../../types'
 import MealTemplateForm from '../MealTemplateForm.vue'
 
 const render = async (draft?: NewMealTemplate) => {
-  const wrapper = mount(MealTemplateForm, { props: { draft } })
+  // The picker belongs to the host's step history (#130), so this stands in for
+  // it: whatever the form asks for is handed straight back as the prop.
+  const wrapper = mount(MealTemplateForm, {
+    props: {
+      draft,
+      'onUpdate:sub': (sub: { picking: number } | undefined) => wrapper.setProps({ sub }),
+    },
+  })
   await flushPromises()
 
   return wrapper
@@ -307,6 +314,84 @@ describe('MealTemplateForm, correcting a saved meal', () => {
     // clearing `busy` until it has. Cancel stays disabled for the same span.
     expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('busy')).toEqual([[true]])
+  })
+
+  describe('the picker as a step of the host (#130)', () => {
+    it('asks for the picker of the slot whose button was tapped, and shows it only while given', async () => {
+      const wrapper = await render(saved('mine'))
+
+      await wrapper
+        .findAll('button')
+        .filter((b) => b.text() === 'Add a food')[1]!
+        .trigger('click')
+      await flushPromises()
+
+      expect(wrapper.emitted('update:sub')).toEqual([[{ picking: 1 }]])
+      // The form shows what the host hands back, so the picker is up.
+      expect(wrapper.find('.results').exists()).toBe(true)
+      expect(wrapper.find('#template-name').exists()).toBe(false)
+    })
+
+    it('leaves the choice of where to go to the host when Back is tapped', async () => {
+      const wrapper = await render()
+      await buttonNamed(wrapper, 'Add a food').trigger('click')
+      await flushPromises()
+
+      await buttonNamed(wrapper, '← Back to the meal').trigger('click')
+
+      // It does not close the picker itself: the host's history must agree.
+      expect(wrapper.emitted('back')).toHaveLength(1)
+      expect(wrapper.find('#template-name').exists()).toBe(false)
+    })
+
+    it('asks the host to close the picker once a food is chosen, and keeps what was typed', async () => {
+      const wrapper = await render()
+      await wrapper.find('#template-name').setValue('Second breakfast')
+      await addFood(wrapper, 0, 'Banana')
+
+      expect(wrapper.emitted('update:sub')).toEqual([[{ picking: 0 }], [undefined]])
+      expect((wrapper.find('#template-name').element as HTMLInputElement).value).toBe(
+        'Second breakfast',
+      )
+    })
+
+    it('does not close a picker that is no longer the one that asked', async () => {
+      const wrapper = await render()
+      await buttonNamed(wrapper, 'Add a food').trigger('click')
+      await flushPromises()
+
+      const choosing = wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes('Banana'))!
+        .trigger('click')
+      // The host has moved on before the names finished loading.
+      await wrapper.setProps({ sub: { picking: 0 } })
+      await choosing
+      await flushPromises()
+
+      expect(wrapper.emitted('update:sub')).toEqual([[{ picking: 0 }]])
+    })
+
+    it('does not open a picker while the meal is being saved', async () => {
+      const wrapper = await render(saved('mine'))
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const real = mealTemplates.put
+      vi.spyOn(mealTemplates, 'put').mockImplementation(async (template) => {
+        await gate
+        return real(template)
+      })
+
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      // Opening one changes the host's step, which would free its Back.
+      for (const button of wrapper.findAll('button').filter((b) => b.text() === 'Add a food')) {
+        expect(button.attributes('disabled')).toBeDefined()
+      }
+
+      release()
+      await flushPromises()
+    })
   })
 
   it('stops announcing busy when the write fails, so nothing stays disabled forever', async () => {

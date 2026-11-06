@@ -23,12 +23,22 @@ import { parseAmount } from '../parse-amount'
 import type { Food, MealSlot, NewMealTemplate } from '../types'
 import FoodPicker from './FoodPicker.vue'
 
-const { draft } = defineProps<{
+const { draft, sub } = defineProps<{
   /** A saved meal to correct, or nothing to build one. */
   draft?: NewMealTemplate
+  /**
+   * The food picker for one slot, when it is showing in place of the form.
+   * Owned by the host so it is one more step of the same history as everything
+   * else on the page (#130); the form keeps its slots while it is open, which
+   * is why it stays mounted rather than being replaced.
+   */
+  sub?: { picking: number }
 }>()
 
 const emit = defineEmits<{
+  'update:sub': [sub: { picking: number } | undefined]
+  /** Leave the current step for the one before it, as the host's Back does. */
+  back: []
   /** A meal that did not exist before. */
   saved: [template: NewMealTemplate]
   /** The same meal, corrected. */
@@ -75,9 +85,6 @@ const slots = ref<DraftSlot[]>(draft ? fromTemplate(draft) : [blankSlot()])
 /** Names for the chosen food ids, so a slot shows more than a uuid. */
 const foods = ref(new Map<string, Food>())
 
-/** Which slot is currently choosing a food, if any. */
-const pickingFor = ref<number | undefined>(undefined)
-
 /**
  * The id this form will save under, decided once.
  *
@@ -100,7 +107,8 @@ onMounted(async () => {
 const foodName = (id: string) => foods.value.get(id)?.name ?? id
 
 async function choose(food: Food) {
-  const index = pickingFor.value
+  const opened = sub
+  const index = opened?.picking
   if (index === undefined) return
 
   const slot = slots.value[index]!
@@ -111,7 +119,9 @@ async function choose(food: Food) {
   if (!slot.defaultOptionId) slot.defaultOptionId = food.id
 
   foods.value = await findFoods(slots.value.flatMap((s) => s.options))
-  pickingFor.value = undefined
+  // Only if this is still the picker that asked: a Back tapped while the names
+  // were loading has already left it, and may since have opened another slot's.
+  if (sub === opened) emit('update:sub', undefined)
 }
 
 function removeOption(index: number, id: string) {
@@ -196,8 +206,8 @@ async function save() {
 
 <template>
   <section class="card">
-    <template v-if="pickingFor !== undefined">
-      <button type="button" class="back" @click="pickingFor = undefined">← Back to the meal</button>
+    <template v-if="sub !== undefined">
+      <button type="button" class="back" @click="emit('back')">← Back to the meal</button>
       <FoodPicker purpose="choose" @select="choose" />
     </template>
 
@@ -258,7 +268,16 @@ async function save() {
         </div>
 
         <div class="slot-actions">
-          <button type="button" class="ghost small" @click="pickingFor = index">Add a food</button>
+          <!-- Held while a save is in flight: opening a step changes the host's
+               `choice`, which clears its `busy` and so frees its Back (#117). -->
+          <button
+            type="button"
+            class="ghost small"
+            :disabled="saving"
+            @click="emit('update:sub', { picking: index })"
+          >
+            Add a food
+          </button>
           <button
             v-if="slots.length > 1"
             type="button"

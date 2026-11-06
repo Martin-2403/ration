@@ -28,7 +28,15 @@ const meal = (id: string, name: string): NewMealTemplate => ({
 })
 
 const render = async (draft?: NewDayTemplate, existing?: boolean) => {
-  const wrapper = mount(DayTemplateForm, { props: { draft, existing } })
+  // The step the form shows belongs to its host (#130), so this stands in for
+  // one: whatever the form asks for is handed straight back as the prop.
+  const wrapper = mount(DayTemplateForm, {
+    props: {
+      draft,
+      existing,
+      'onUpdate:sub': (sub: 'single-food' | undefined) => wrapper.setProps({ sub }),
+    },
+  })
   await flushPromises()
 
   return wrapper
@@ -317,6 +325,57 @@ describe('DayTemplateForm, correcting a saved day', () => {
       await save(wrapper)
 
       expect(await db.mealTemplates.count()).toBe(0)
+    })
+
+    it('is a step of the host: asks to open, leaves Back to it, and asks to close once added (#130)', async () => {
+      const wrapper = await render()
+      await wrapper.find('#day-name').setValue('Snack day')
+
+      await buttonNamed(wrapper, 'Add a single food').trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('update:sub')).toEqual([['single-food']])
+      expect(wrapper.find('#day-name').exists()).toBe(false)
+
+      // It does not close the step itself: the host's history must agree.
+      await buttonNamed(wrapper, '← Back to the day').trigger('click')
+      expect(wrapper.emitted('back')).toHaveLength(1)
+      expect(wrapper.find('#day-name').exists()).toBe(false)
+
+      await wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes('Banana'))!
+        .trigger('click')
+      await flushPromises()
+      await buttonNamed(wrapper, 'Add to the day').trigger('click')
+
+      expect(wrapper.emitted('update:sub')).toEqual([['single-food'], [undefined]])
+      // What was typed survives the step, because the form stays mounted.
+      expect((wrapper.find('#day-name').element as HTMLInputElement).value).toBe('Snack day')
+      expect(order(wrapper)).toEqual(['Banana'])
+    })
+
+    it('does not offer the single food while the day is being saved (#130)', async () => {
+      const draft: NewDayTemplate = {
+        id: 'workday',
+        name: 'Workday',
+        mealTemplateIds: ['porridge'],
+      }
+      const wrapper = await render(draft, true)
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => (release = resolve))
+      const real = dayTemplates.put
+      vi.spyOn(dayTemplates, 'put').mockImplementation(async (template) => {
+        await gate
+        return real(template)
+      })
+
+      await buttonNamed(wrapper, 'Save the changes').trigger('click')
+
+      // Opening one changes the host's step, which would free its Back.
+      expect(buttonNamed(wrapper, 'Add a single food').attributes('disabled')).toBeDefined()
+
+      release()
+      await flushPromises()
     })
 
     it('accepts a decimal comma and refuses zero', async () => {
