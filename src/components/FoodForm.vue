@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from 'vue'
 
+import { seedFood } from '../data/foods'
 import { DECLARATION_NUTRIENTS, type NutrientKey } from '../data/nutrients'
 import { labelFor, unitFor } from '../nutrient-display'
 import { parseAmount } from '../parse-amount'
@@ -15,7 +16,11 @@ const { source } = defineProps<{
   source?: NewFood
 }>()
 
-const emit = defineEmits<{ submit: [food: NewFood, grams: number] }>()
+const emit = defineEmits<{
+  submit: [food: NewFood, grams: number]
+  /** A correction stored without logging it (#93): a food and nothing else. */
+  save: [food: NewFood]
+}>()
 
 // The seven a label declares, not every nutrient the registry tracks (#56).
 // This form is for transcribing a panel, and nobody types 34 values off one;
@@ -92,18 +97,38 @@ const isBad = (key: NutrientKey) => {
   return parsed.kind === 'not-a-number' || (parsed.kind === 'number' && parsed.value < 0)
 }
 
+/**
+ * Whether the food itself can be stored: a name, and every value either blank
+ * or a number. The amount eaten is deliberately not part of it — it describes
+ * a meal, not the food, so a correction must not wait on it (#93).
+ */
+const canSave = computed(
+  () =>
+    name.value.trim().length > 0 &&
+    parsedValues.value.every(
+      ({ parsed }) =>
+        parsed.kind !== 'not-a-number' && !(parsed.kind === 'number' && parsed.value < 0),
+    ),
+)
+
 const canSubmit = computed(() => {
-  if (name.value.trim().length === 0) return false
-  if (notNumeric.value.length > 0 || negative.value.length > 0) return false
+  if (!canSave.value) return false
 
   // An amount eaten has no meaningful blank: it is what everything is scaled by.
   return parsedGrams.value.kind === 'number' && parsedGrams.value.value > 0
 })
 
-function submit(mode: 'new' | 'update' = 'new') {
-  if (!canSubmit.value) return
-  if (mode === 'new' && nameIsUnchanged.value) return
+/**
+ * Whether correcting the source in place can be stored without logging.
+ *
+ * Not for a food that ships with the app: seeds are never read back from the
+ * store (§13, findFood checks them first), so a stored correction would be
+ * shadowed and "updated" would be a claim about nothing.
+ */
+const canSaveOnly = computed(() => source !== undefined && seedFood(source.id) === undefined)
 
+/** The food as edited, under `id` when it is a revision of the source. */
+function editedFood(id?: string): NewFood {
   // Only fields that parsed to a number are passed on. A blank becomes an absent
   // key, recorded as unknown — never as zero (§3).
   const per100g: Partial<Record<NutrientKey, number>> = {}
@@ -111,25 +136,37 @@ function submit(mode: 'new' | 'update' = 'new') {
     if (parsed.kind === 'number') per100g[key] = parsed.value
   }
 
-  const amount = parsedGrams.value
-  if (amount.kind !== 'number') return
-
   // `keys` is passed as what was asked: this form offers the seven a label
   // declares, so a micronutrient it never showed must carry over rather than
   // be erased (§3, #51).
-  const food = source
-    ? reviseFood(
-        source,
-        { name: name.value, asked: keys, per100g },
-        mode === 'update' ? source.id : crypto.randomUUID(),
-      )
+  return source
+    ? reviseFood(source, { name: name.value, asked: keys, per100g }, id ?? crypto.randomUUID())
     : buildUserFood({ name: name.value, per100g })
+}
 
-  emit('submit', food, amount.value)
-
+function reset() {
   name.value = ''
   grams.value = ''
   values.value = {}
+}
+
+function submit(mode: 'new' | 'update' = 'new') {
+  if (!canSubmit.value) return
+  if (mode === 'new' && nameIsUnchanged.value) return
+
+  const amount = parsedGrams.value
+  if (amount.kind !== 'number') return
+
+  emit('submit', editedFood(mode === 'update' ? source?.id : undefined), amount.value)
+  reset()
+}
+
+/** Stores the correction and nothing else: no amount is read, no entry written (#93). */
+function saveOnly() {
+  if (!source || !canSaveOnly.value || !canSave.value) return
+
+  emit('save', editedFood(source.id))
+  reset()
 }
 </script>
 
@@ -142,6 +179,9 @@ function submit(mode: 'new' | 'update' = 'new') {
       <p class="hint">
         Values are per 100 g. Leave a field blank if you do not know it — blank is recorded as no
         data, never as zero. A comma or a dot both work as the decimal separator.
+        <!-- Said where the field's two meanings could be confused: it is an
+             amount only when something is being logged (#93). -->
+        <template v-if="source">Eaten is only needed to log, not to update a food.</template>
       </p>
 
       <div class="row">
@@ -193,18 +233,34 @@ function submit(mode: 'new' | 'update' = 'new') {
           Give the copy its own name, or update {{ source!.name }} instead.
         </p>
 
-        <!-- Two outcomes from one screen, named at the moment the user knows
+        <!-- Three outcomes from one screen, named at the moment the user knows
              which they meant. Correcting is safe: log entries snapshot their
              totals (§9), so it changes what future logs resolve to and rewrites
-             no history. -->
-        <template v-if="source">
-          <button type="button" class="ghost" :disabled="!canSubmit" @click="submit('update')">
-            Update {{ source.name }}
-          </button>
+             no history. Only the first logs a copy; the second logs against the
+             corrected food; the third logs nothing, which is the whole point of
+             it (#93).
+
+             Stacked, one to a row: the labels carry the source's name and run
+             long, and three pills side by side wrap mid-label at 375px. The
+             filled pill stays with the one action most people came for, and the
+             two secondaries differ by what they say, not by colour (§15). -->
+        <div v-if="source" class="actions">
           <button type="submit" :disabled="!canSubmit || nameIsUnchanged">
             Save as new and log
           </button>
-        </template>
+          <button type="button" class="ghost" :disabled="!canSubmit" @click="submit('update')">
+            Update {{ source.name }} and log
+          </button>
+          <button
+            v-if="canSaveOnly"
+            type="button"
+            class="ghost"
+            :disabled="!canSave"
+            @click="saveOnly"
+          >
+            Update {{ source.name }} without logging
+          </button>
+        </div>
         <button v-else type="submit" :disabled="!canSubmit">Save and log</button>
       </div>
     </form>
@@ -278,8 +334,7 @@ input[type='text'] {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  /* Wraps because the clone footer carries two buttons and a message, which do
-     not fit on one line at 375px. */
+  /* Wraps because the variation footer carries a message above its buttons. */
   flex-wrap: wrap;
   gap: var(--space-3) var(--space-4);
   padding-top: var(--space-4);
@@ -316,6 +371,18 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Each action on its own row, the width of the card. A long food name wraps
+   inside its own button rather than pushing a neighbour off the screen. */
+.actions {
+  display: grid;
+  flex: 1 1 100%;
+  gap: var(--space-2);
+}
+
+.actions button {
+  overflow-wrap: anywhere;
 }
 
 /* Secondary, because correcting the source is the rarer intent and §15 reserves

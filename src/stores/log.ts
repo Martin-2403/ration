@@ -9,6 +9,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { addLocalDays, nextLocalMidnight, startOfLocalDay } from '../dates'
 import { foods, log } from '../db'
 import { findFood } from '../food-lookup'
+import { requestPersistence } from '../storage-persistence'
 import { mergeTotals, nutrientsFor, sumTotals } from '../totals'
 import type { LogEntry, NewFood, NewLogEntry, StoredLogEntry } from '../types'
 
@@ -63,6 +64,22 @@ export const useLogStore = defineStore('log', () => {
   }
 
   /**
+   * Stores a food the user entered or corrected, without logging anything (#93).
+   *
+   * Asks for persistent storage itself because `foods.put` does not: the repository
+   * leaves the food cache out of §10's "every user write", since the resolver
+   * fills it. Here the food is the user's own, and when nothing is logged
+   * alongside it this is the only write there is to ask on behalf of.
+   *
+   * Existing log entries are not touched: they snapshot their totals (§9), so a
+   * correction changes what future logs resolve to and rewrites no history.
+   */
+  async function saveFood(food: NewFood) {
+    await foods.put(food)
+    void requestPersistence()
+  }
+
+  /**
    * Quick-log of a single food (§7): no template, one item, no slot. The food is
    * stored first — a log entry referencing an id that resolves to nothing would
    * leave history unreadable, and §13 relies on stored foods to pin what has
@@ -74,7 +91,7 @@ export const useLogStore = defineStore('log', () => {
    * can name an earlier day (§7, #61).
    */
   async function logFood(food: NewFood, grams: number, timestamp = Date.now()) {
-    await foods.put(food)
+    await saveFood(food)
 
     return log.add({
       name: food.name,
@@ -127,6 +144,7 @@ export const useLogStore = defineStore('log', () => {
     goToDay,
     shiftDay,
     logMeal,
+    saveFood,
     logFood,
     updateEntry,
     reviseEntry,

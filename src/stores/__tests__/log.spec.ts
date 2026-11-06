@@ -2,10 +2,11 @@
 import 'fake-indexeddb/auto'
 
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { startOfLocalDay } from '../../dates'
 import { db, foods } from '../../db'
+import { resetPersistenceSession } from '../../storage-persistence'
 import type { NewLogEntry } from '../../types'
 import { useLogStore } from '../log'
 
@@ -222,5 +223,54 @@ describe('log store', () => {
     expect(store.entries).toEqual([])
     // Empty, not zeroed: no records is not the same as no intake (§9).
     expect(store.dayTotals).toEqual({})
+  })
+})
+
+/** Correcting a food on its own, with no entry beside it (#93). */
+describe('log store, saving a food without logging it', () => {
+  const apple = {
+    id: 'apple',
+    name: 'Apple',
+    per100g: { energy: { value: 52, source: 'user' as const } },
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('stores the food and writes no log entry', async () => {
+    const store = useLogStore()
+
+    await store.saveFood(apple)
+
+    expect((await foods.get('apple'))?.per100g.energy).toEqual({ value: 52, source: 'user' })
+    expect(await db.logEntries.count()).toBe(0)
+  })
+
+  it('corrects the food and leaves an entry already logged for it as it was', async () => {
+    const store = useLogStore()
+    await store.logFood(apple, 150)
+    const [before] = await db.logEntries.toArray()
+
+    await store.saveFood({ ...apple, per100g: { energy: { value: 520, source: 'user' } } })
+
+    // The entry snapshots its totals at log time (§9): a correction changes
+    // what future logs resolve to and rewrites no history, updatedAt included.
+    expect((await foods.get('apple'))?.per100g.energy?.value).toBe(520)
+    expect(await db.logEntries.toArray()).toEqual([before])
+    expect(before!.totals.energy?.amount).toBeCloseTo(78, 6)
+  })
+
+  it('asks for persistent storage, since nothing is logged to ask for it', async () => {
+    const persist = vi.fn(async () => true)
+    vi.stubGlobal('navigator', { storage: { persisted: async () => false, persist } })
+    resetPersistenceSession()
+    const store = useLogStore()
+
+    // foods.put leaves this out on purpose, for the resolver's cache (§10);
+    // a user's own correction is the one food write that is a user write.
+    await store.saveFood(apple)
+
+    expect(persist).toHaveBeenCalledTimes(1)
   })
 })

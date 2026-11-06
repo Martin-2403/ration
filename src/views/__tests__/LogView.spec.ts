@@ -328,6 +328,188 @@ describe('LogView', () => {
     expect(stored[0]!.name).toBe('Banana, dried')
   })
 
+  /**
+   * #93: the variation form's third action stores a corrected food and logs
+   * nothing. The amount belongs to the actions that log, so a blank one must not
+   * stand in the way, and no entry may appear — a stray 1 g entry is what this
+   * replaced.
+   */
+  describe('correcting a food without logging it (#93)', () => {
+    const yoghurt = {
+      id: 'yoghurt',
+      name: 'Yoghurt',
+      per100g: {
+        energy: { value: 66, source: 'off-packaging' as const },
+        fat: { value: 3.5, source: 'off-packaging' as const },
+      },
+    }
+
+    const openYoghurt = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+      await optionNamed(wrapper, 'A variation of a food').trigger('click')
+      await flushPromises()
+      await wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes('Yoghurt'))!
+        .trigger('click')
+      await flushPromises()
+    }
+
+    const saveOnly = (wrapper: Awaited<ReturnType<typeof render>>) =>
+      buttonNamed(wrapper, 'Update Yoghurt without logging')
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('stores the corrected food, with the amount left blank, and writes no entry', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+
+      await wrapper.find('#food-energy').setValue('70')
+      expect(wrapper.find('#food-grams').element).toHaveProperty('value', '')
+      await saveOnly(wrapper).trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('.confirmation').exists()).toBe(true))
+
+      const stored = await db.foods.get('yoghurt')
+      expect(stored!.per100g.energy).toEqual({ value: 70, source: 'user' })
+      // Untouched figures keep their provenance.
+      expect(stored!.per100g.fat).toEqual({ value: 3.5, source: 'off-packaging' })
+      expect(await db.logEntries.count()).toBe(0)
+    })
+
+    it('leaves an entry already logged for that food exactly as it was', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const store = useLogStore()
+      await store.logFood(yoghurt, 200)
+      const [before] = await db.logEntries.toArray()
+
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      await wrapper.find('#food-energy').setValue('700')
+      await saveOnly(wrapper).trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('.confirmation').exists()).toBe(true))
+
+      // Snapshotted at log time (§9): the stored food moved, the day did not.
+      expect((await db.foods.get('yoghurt'))!.per100g.energy?.value).toBe(700)
+      expect(await db.logEntries.toArray()).toEqual([before])
+      expect(before!.totals.energy?.amount).toBeCloseTo(132, 6)
+    })
+
+    it('says a food was updated and that nothing was logged, and claims no intake', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      await wrapper.find('#food-energy').setValue('70')
+      await saveOnly(wrapper).trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('.confirmation').exists()).toBe(true))
+
+      expect(wrapper.find('.confirmation').text()).toBe('Updated Yoghurt. Nothing was logged.')
+      // No link to a day that gained nothing, and no prompt to back up a log that
+      // did not change.
+      expect(wrapper.find('.confirmation a').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Logged')
+    })
+
+    it('lands on the picker the food came from, one step back', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      const before = stepOf()
+      await wrapper.find('#food-energy').setValue('70')
+      await saveOnly(wrapper).trigger('click')
+      await vi.waitFor(() => expect(wrapper.find('#picker-query').exists()).toBe(true))
+
+      // Where Back would have gone, with the corrected figure in the list.
+      expect(wrapper.find('.back').text()).toBe('← Back to Log')
+      expect(wrapper.find('.results').text()).toContain('70')
+      await vi.waitFor(() => expect(stepOf()).toBe(before - 1))
+    })
+
+    it('is not offered for a food that ships with the app', async () => {
+      const wrapper = await render()
+      await optionNamed(wrapper, 'A variation of a food').trigger('click')
+      await flushPromises()
+      await wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes('Banana'))!
+        .trigger('click')
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('without logging')
+    })
+
+    it('still logs, and still needs an amount above zero, from the other two actions', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      await wrapper.find('#food-energy').setValue('70')
+
+      const updateAndLog = buttonNamed(wrapper, 'Update Yoghurt and log')
+      for (const amount of ['', '0']) {
+        await wrapper.find('#food-grams').setValue(amount)
+        expect(updateAndLog.attributes('disabled')).toBeDefined()
+        // Zero is a value, not a blank: refused for logging all the same, while
+        // storing the food does not read it.
+        expect(saveOnly(wrapper).attributes('disabled')).toBeUndefined()
+      }
+      await updateAndLog.trigger('click')
+      expect(await db.logEntries.count()).toBe(0)
+
+      await wrapper.find('#food-grams').setValue('150')
+      await updateAndLog.trigger('click')
+      await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+
+      const [entry] = await db.logEntries.toArray()
+      expect(entry!.items[0]).toMatchObject({ foodId: 'yoghurt', grams: 150 })
+      expect((await db.foods.get('yoghurt'))!.per100g.energy?.value).toBe(70)
+      expect(wrapper.find('.confirmation').text()).toContain('Logged Yoghurt')
+    })
+
+    it('holds Back and the date disabled while the food is being stored, and still confirms it', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      let release!: () => void
+      const open = new Promise<void>((resolve) => (release = resolve))
+      const store = useLogStore()
+      const real = store.saveFood
+      vi.spyOn(store, 'saveFood').mockImplementation(async (food) => {
+        await open
+        return real(food)
+      })
+
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      await wrapper.find('#food-energy').setValue('70')
+      await saveOnly(wrapper).trigger('click')
+
+      // Leaving would unmount the form, and the confirmation is set after the
+      // write: the same race #117 closed for the template forms.
+      expect(wrapper.find('.back').attributes('disabled')).toBeDefined()
+      expect(wrapper.find('#log-date').attributes('disabled')).toBeDefined()
+
+      release()
+      await vi.waitFor(() => expect(wrapper.find('.confirmation').text()).toContain('Updated'))
+      expect(wrapper.find('.back').attributes('disabled')).toBeUndefined()
+      expect(wrapper.find('#log-date').attributes('disabled')).toBeUndefined()
+    })
+
+    it('writes once however quickly the button is pressed twice', async () => {
+      await db.foods.put({ ...yoghurt, updatedAt: 1 })
+      const store = useLogStore()
+      vi.spyOn(store, 'saveFood')
+
+      const wrapper = await render()
+      await openYoghurt(wrapper)
+      await wrapper.find('#food-energy').setValue('70')
+      const button = saveOnly(wrapper)
+      button.trigger('click')
+      button.trigger('click')
+      await flushPromises()
+
+      expect(store.saveFood).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('lists a stored meal template alongside the seeds', async () => {
     await mealTemplates.put({
       id: 'lunch',

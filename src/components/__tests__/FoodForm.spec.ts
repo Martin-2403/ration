@@ -236,6 +236,9 @@ describe('FoodForm, started from a food', () => {
 
   const render = () => mount(FoodForm, { props: { source } })
 
+  const button = (wrapper: ReturnType<typeof render>, label: string) =>
+    wrapper.findAll('button').find((candidate) => candidate.text() === label)!
+
   it('prefills the name and the known values', () => {
     const wrapper = render()
 
@@ -280,7 +283,7 @@ describe('FoodForm, started from a food', () => {
     const wrapper = render()
     await wrapper.find('#food-energy').setValue('70')
     await wrapper.find('#food-grams').setValue('150')
-    await wrapper.find('button.ghost').trigger('click')
+    await button(wrapper, 'Update Yoghurt, 3.5% and log').trigger('click')
 
     const [food] = wrapper.emitted('submit')![0] as [NewFood, number]
     expect(food.id).toBe('yoghurt')
@@ -293,7 +296,7 @@ describe('FoodForm, started from a food', () => {
     await wrapper.find('#food-grams').setValue('150')
 
     // The same-name guard applies to copying, not to correcting.
-    expect(wrapper.find('button.ghost').attributes('disabled')).toBeUndefined()
+    expect(button(wrapper, 'Update Yoghurt, 3.5% and log').attributes('disabled')).toBeUndefined()
   })
 
   it('offers no second action when nothing is being copied', () => {
@@ -301,5 +304,153 @@ describe('FoodForm, started from a food', () => {
 
     expect(wrapper.find('button.ghost').exists()).toBe(false)
     expect(wrapper.text()).toContain('Save and log')
+  })
+})
+
+/**
+ * #93: correcting a food without logging it. The amount eaten describes a meal,
+ * not the food, so it must not gate — or even be read by — the action that
+ * stores a food and writes nothing else.
+ */
+describe('FoodForm, saving a correction without logging', () => {
+  const source: NewFood = {
+    id: 'yoghurt',
+    name: 'Yoghurt, 3.5%',
+    per100g: {
+      energy: { value: 66, source: 'off-packaging' },
+      fat: { value: 3.5, source: 'off-packaging' },
+    },
+  }
+
+  const render = () => mount(FoodForm, { props: { source } })
+
+  const saveOnly = (wrapper: ReturnType<typeof render>) =>
+    wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Update Yoghurt, 3.5% without logging')!
+
+  const logging = (wrapper: ReturnType<typeof render>) =>
+    wrapper.findAll('button').filter((button) => /and log$/.test(button.text()))
+
+  it('offers three actions, the filled pill on the one that copies and logs', () => {
+    const wrapper = render()
+
+    expect(wrapper.findAll('button').map((button) => button.text())).toEqual([
+      'Save as new and log',
+      'Update Yoghurt, 3.5% and log',
+      'Update Yoghurt, 3.5% without logging',
+    ])
+    // One primary: the other two are the outlined secondary (§15).
+    expect(wrapper.findAll('button:not(.ghost)').map((button) => button.text())).toEqual([
+      'Save as new and log',
+    ])
+  })
+
+  it('saves the corrected food under its own id and emits no amount', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await saveOnly(wrapper).trigger('click')
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    const [food, ...rest] = wrapper.emitted('save')![0] as [NewFood]
+    expect(rest).toEqual([])
+    expect(food.id).toBe('yoghurt')
+    expect(food.per100g.energy).toEqual({ value: 70, source: 'user' })
+    // Untouched figures keep the label's provenance, as for the other actions.
+    expect(food.per100g.fat).toEqual({ value: 3.5, source: 'off-packaging' })
+  })
+
+  it.each([
+    ['blank', ''],
+    ['zero', '0'],
+    ['text', 'abc'],
+    ['negative', '-5'],
+  ])('is not blocked by an amount that is %s', async (_name, amount) => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await wrapper.find('#food-grams').setValue(amount)
+
+    expect(saveOnly(wrapper).attributes('disabled')).toBeUndefined()
+    await saveOnly(wrapper).trigger('click')
+    expect(wrapper.emitted('save')).toHaveLength(1)
+  })
+
+  it('does not name the amount as an error while it is simply blank', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+
+    expect(wrapper.text()).not.toContain('Eaten:')
+    expect(wrapper.find('#food-grams').attributes('aria-invalid')).toBeUndefined()
+  })
+
+  it('leaves the two logging actions requiring an amount above zero', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-name').setValue('Yoghurt, 0.1%')
+
+    for (const amount of ['', '0', 'abc', '-5']) {
+      await wrapper.find('#food-grams').setValue(amount)
+
+      expect(logging(wrapper)).toHaveLength(2)
+      for (const action of logging(wrapper)) expect(action.attributes('disabled')).toBeDefined()
+    }
+
+    await wrapper.find('#food-grams').setValue('150')
+    for (const action of logging(wrapper)) expect(action.attributes('disabled')).toBeUndefined()
+  })
+
+  it('accepts a German decimal comma in a value, with no amount', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-fat').setValue('1,5')
+    await saveOnly(wrapper).trigger('click')
+
+    const [food] = wrapper.emitted('save')![0] as [NewFood]
+    expect(food.per100g.fat).toEqual({ value: 1.5, source: 'user' })
+  })
+
+  it.each([
+    ['a name', () => ({ name: '' })],
+    ['a value that is not a number', () => ({ energy: 'abc' })],
+    ['a negative value', () => ({ protein: '-1' })],
+  ])('is still blocked by %s', async (_name, change) => {
+    const wrapper = render()
+    const { name, energy, protein } = change() as {
+      name?: string
+      energy?: string
+      protein?: string
+    }
+    await fill(wrapper, { name, energy, protein })
+
+    expect(saveOnly(wrapper).attributes('disabled')).toBeDefined()
+    await saveOnly(wrapper).trigger('click')
+    expect(wrapper.emitted('save')).toBeUndefined()
+  })
+
+  it('clears itself after saving, like the actions that log', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await saveOnly(wrapper).trigger('click')
+
+    expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('is not offered on a food that ships with the app', () => {
+    // Seeds are never read back from the store (§13): a stored correction would
+    // be shadowed, and the confirmation would be a claim about nothing. The
+    // action that logs is unchanged, because the entry snapshots its own totals.
+    const wrapper = mount(FoodForm, {
+      props: { source: { id: 'banana', name: 'Banana', per100g: {} } },
+    })
+
+    expect(wrapper.findAll('button').map((button) => button.text())).toEqual([
+      'Save as new and log',
+      'Update Banana and log',
+    ])
+  })
+
+  it('offers it only when a food is being copied or corrected', () => {
+    const wrapper = mount(FoodForm)
+
+    expect(wrapper.text()).not.toContain('without logging')
   })
 })
