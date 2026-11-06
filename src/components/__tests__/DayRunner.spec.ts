@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db, mealTemplates } from '../../db'
+import { useLogStore } from '../../stores/log'
 import type { NewDayTemplate, NewMealTemplate } from '../../types'
 import DayRunner from '../DayRunner.vue'
 
@@ -182,6 +183,34 @@ describe('DayRunner', () => {
 
     await logMeal(wrapper, 2)
     expect(wrapper.text()).toContain('Logged 2 of 2')
+  })
+
+  it('reports its meal write to the host, so the host can hold its own ways out (#163)', async () => {
+    const wrapper = await render(day(['porridge']))
+    expect(wrapper.emitted('busy')).toBeUndefined()
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    // Synchronously, in the click's own stack: a host that has been left by the
+    // time a deferred emit runs never receives it (#108).
+    expect(wrapper.emitted('busy')).toEqual([[true]])
+
+    await vi.waitFor(async () => expect(await db.logEntries.count()).toBe(1))
+    await flushPromises()
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+  })
+
+  it('reports the write ending when it fails, rather than staying busy', async () => {
+    const wrapper = await render(day(['porridge']))
+    const store = useLogStore()
+    vi.spyOn(store, 'logMeal').mockRejectedValue(new Error('write failed'))
+    // Surfaces through Vue's error handling; only the flag is under test.
+    wrapper.vm.$.appContext.config.errorHandler = () => {}
+
+    await buttonNamed(wrapper, 'Log meal').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('busy')).toEqual([[true], [false]])
+    vi.restoreAllMocks()
   })
 
   it('backdates every meal it logs', async () => {

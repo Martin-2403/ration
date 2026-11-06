@@ -109,7 +109,8 @@ const outcome = ref<{ logged: boolean; what: string; date: string } | undefined>
  * confirmation, or a list that never reloads and a stale row whose next save
  * silently reverts it (#117, the same race as #108).
  *
- * Who clears it: MealBuilder emits `busy: false` itself when its write ends.
+ * Who clears it: MealBuilder emits `busy: false` itself when its write ends, and
+ * DayRunner passes that on for the meal it is running (#163).
  * The template and day forms emit it only when a save fails; after a
  * successful one the handlers below clear it once their reload has finished
  * and `choice` has moved on, since the form is still on screen until then.
@@ -626,6 +627,7 @@ async function logFood(food: NewFood, grams: number) {
           :template="choice.template"
           :eaten-at="backdatedTo"
           @done="finishDay"
+          @busy="busy = $event"
         />
 
         <DayTemplateForm

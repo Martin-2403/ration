@@ -1109,6 +1109,92 @@ describe('LogView', () => {
       await flushPromises()
     })
 
+    describe('a meal logged inside a day run (#163)', () => {
+      const startWorkday = async (wrapper: Awaited<ReturnType<typeof render>>) => {
+        await openDays(wrapper)
+        await optionNamed(wrapper, 'Workday').trigger('click')
+        await flushPromises()
+      }
+
+      const holdLogMeal = () => {
+        const pending = gate()
+        const store = useLogStore()
+        const real = store.logMeal
+        vi.spyOn(store, 'logMeal').mockImplementation(async (entry) => {
+          await pending.open
+          return real(entry)
+        })
+
+        return pending
+      }
+
+      it('holds Back and the date disabled for the write, and still counts the meal', async () => {
+        await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+        const pending = holdLogMeal()
+
+        const wrapper = await render()
+        await startWorkday(wrapper)
+        await buttonNamed(wrapper, 'Log meal').trigger('click')
+
+        // The runner reports to the view like every other branch does; before
+        // it did, Back stayed live and leaving unmounted the runner before the
+        // builder's `logged` reached it.
+        expect(disabled(wrapper, '.back')).toBe(true)
+        expect(disabled(wrapper, '#log-date')).toBe(true)
+
+        pending.release()
+        await vi.waitFor(() => expect(wrapper.text()).toContain('Logged 1 of 1'))
+        expect(await db.logEntries.count()).toBe(1)
+        expect(disabled(wrapper, '.back')).toBe(false)
+        expect(disabled(wrapper, '#log-date')).toBe(false)
+      })
+
+      it('frees Back between meals, and holds it again for the next write', async () => {
+        await dayTemplates.put({
+          id: 'workday',
+          name: 'Workday',
+          mealTemplateIds: ['porridge', 'porridge'],
+        })
+
+        const wrapper = await render()
+        await startWorkday(wrapper)
+        await buttonNamed(wrapper, 'Log meal').trigger('click')
+        await vi.waitFor(() => expect(wrapper.text()).toContain('Meal 2 of 2'))
+        await flushPromises()
+        // Not stuck from the first write: the builder keyed away right after
+        // emitting `logged`, and its `busy: false` has to have got through.
+        expect(disabled(wrapper, '.back')).toBe(false)
+
+        const pending = holdLogMeal()
+        await buttonNamed(wrapper, 'Log meal').trigger('click')
+        expect(disabled(wrapper, '.back')).toBe(true)
+
+        pending.release()
+        await vi.waitFor(() => expect(wrapper.text()).toContain('Logged 2 of 2'))
+        expect(disabled(wrapper, '.back')).toBe(false)
+      })
+
+      it('does not leave Back disabled when the run is left by a native back mid-write', async () => {
+        await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+        const pending = holdLogMeal()
+
+        const wrapper = await render()
+        await startWorkday(wrapper)
+        await buttonNamed(wrapper, 'Log meal').trigger('click')
+        expect(disabled(wrapper, '.back')).toBe(true)
+
+        // A gesture cannot be disabled. The runner goes with it, and so does
+        // the builder's `busy: false`, so the view has to clear the flag itself.
+        history.back()
+        await vi.waitFor(() => expect(wrapper.text()).not.toContain('Log meal'))
+        expect(disabled(wrapper, '.back')).toBe(false)
+        expect(disabled(wrapper, '#log-date')).toBe(false)
+
+        pending.release()
+        await flushPromises()
+      })
+    })
+
     it('holds Back, Cancel and the date disabled while a corrected meal is being saved', async () => {
       await mealTemplates.put({
         id: 'lunch',
