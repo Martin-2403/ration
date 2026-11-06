@@ -61,6 +61,10 @@ const date = ref(toISODate())
 /** Future dates are refused: an entry that has not happened is a plan, not intake. */
 const today = toISODate()
 
+/** The steps a form takes inside itself, which the step history has to see (#130). */
+type DayFormSub = 'single-food'
+type MealFormSub = { picking: number }
+
 const choice = ref<
   | { kind: 'template'; template: NewMealTemplate }
   /** The saved days, one step in, and then one of them running (#52). */
@@ -69,16 +73,23 @@ const choice = ref<
   /**
    * The day form: nothing to build one, a clone to start from, or a saved day
    * to correct in place (#101).
+   *
+   * `sub` is a step inside the form (#130). It stays on this choice rather than
+   * becoming a kind of its own so the form's branch is the same one before and
+   * after: the form instance, and the unsaved day it holds, is kept.
    */
-  | { kind: 'day-form'; draft?: NewDayTemplate; existing?: boolean }
+  | { kind: 'day-form'; draft?: NewDayTemplate; existing?: boolean; sub?: DayFormSub }
   | { kind: 'food' }
   | { kind: 'stored' }
   /** Cloning or correcting: pick a source, then the form prefilled from it (#51). */
   | { kind: 'variation'; source?: Food }
   /** The list of saved meals, one step in from the options (#98). */
   | { kind: 'meals' }
-  /** The meal form: building one (#96), or correcting a saved one (#101). */
-  | { kind: 'meal-form'; draft?: NewMealTemplate }
+  /**
+   * The meal form: building one (#96), or correcting a saved one (#101). `sub`
+   * is the food picker for one slot (#130), as for the day form.
+   */
+  | { kind: 'meal-form'; draft?: NewMealTemplate; sub?: MealFormSub }
   | undefined
 >()
 /**
@@ -241,7 +252,9 @@ watch(choice, () => {
   removingDayId.value = undefined
   // A step that leaves while a child is mid-write (a native back gesture, which
   // cannot be disabled) takes the child's own `busy: false` with it, so this is
-  // the only thing that can clear the flag then.
+  // the only thing that can clear the flag then. A step inside a form lands here
+  // too; the forms hold their ways into one shut while saving, so it never
+  // clears a write that is really in flight (#130).
   busy.value = false
 })
 
@@ -259,10 +272,41 @@ function goBack() {
   choice.value = current && parentOf(current)
 }
 
+/**
+ * A form opening or finishing a step of its own (#130).
+ *
+ * Spreads the current choice, so `draft`/`existing` stay exactly what the form
+ * was opened with: the form keeps the working copy, and a new object here must
+ * not look like a different form.
+ */
+function setDaySub(sub: DayFormSub | undefined) {
+  const current = choice.value
+
+  if (current?.kind !== 'day-form' || current.sub === sub) return
+
+  choice.value = { ...current, sub }
+}
+
+function setMealSub(sub: MealFormSub | undefined) {
+  const current = choice.value
+
+  if (current?.kind !== 'meal-form' || current.sub === sub) return
+
+  choice.value = { ...current, sub }
+}
+
 type Choice = NonNullable<typeof choice.value>
 
 /** Where one step back from `current` lands: the single place that knows the flow's shape. */
 function parentOf(current: Choice): Choice | undefined {
+  // A step inside a form leaves to the form itself, as it was opened; leaving
+  // the form is the step after that (#130).
+  if (current.kind === 'day-form' && current.sub) {
+    return { kind: 'day-form', draft: current.draft, existing: current.existing }
+  }
+  if (current.kind === 'meal-form' && current.sub) {
+    return { kind: 'meal-form', draft: current.draft }
+  }
   if (current.kind === 'template' || current.kind === 'meal-form') return { kind: 'meals' }
   if (current.kind === 'day' || current.kind === 'day-form') return { kind: 'days' }
   if (current.kind === 'variation' && current.source) return { kind: 'variation' }
@@ -584,6 +628,9 @@ async function logFood(food: NewFood, grams: number) {
           v-else-if="choice.kind === 'day-form'"
           :draft="choice.draft"
           :existing="choice.existing"
+          :sub="choice.sub"
+          @update:sub="setDaySub"
+          @back="goBack"
           @saved="savedDay"
           @updated="updatedDay"
           @cancel="goBack"
@@ -612,6 +659,9 @@ async function logFood(food: NewFood, grams: number) {
         <MealTemplateForm
           v-else-if="choice.kind === 'meal-form'"
           :draft="choice.draft"
+          :sub="choice.sub"
+          @update:sub="setMealSub"
+          @back="goBack"
           @saved="savedTemplate"
           @updated="updatedTemplate"
           @cancel="goBack"

@@ -24,7 +24,7 @@ import { listMealTemplates, type MealTemplateMatch } from '../template-lookup'
 import type { Food, NewDayTemplate, NewMealTemplate } from '../types'
 import SingleFoodStep from './SingleFoodStep.vue'
 
-const { draft, existing } = defineProps<{
+const { draft, existing, sub } = defineProps<{
   /** A saved day to correct, a clone to start from, or nothing at all. */
   draft?: NewDayTemplate
   /**
@@ -34,9 +34,19 @@ const { draft, existing } = defineProps<{
    * must not be announced as a correction.
    */
   existing?: boolean
+  /**
+   * The step the form is showing in place of itself, if any. Owned by the host
+   * so it is one more step of the same history as everything else on the page
+   * (#130); the form keeps its own state while one is showing, which is why it
+   * stays mounted rather than being replaced.
+   */
+  sub?: 'single-food'
 }>()
 
 const emit = defineEmits<{
+  'update:sub': [sub: 'single-food' | undefined]
+  /** Leave the current step for the one before it, as the host's Back does. */
+  back: []
   /** A day that did not exist before, whether built or copied. */
   saved: [template: NewDayTemplate]
   /** The same day, corrected. */
@@ -79,9 +89,6 @@ onMounted(async () => {
 /** One-slot meals made here and not yet stored; see the header. */
 const created = ref<NewMealTemplate[]>([])
 
-/** True while the single-food step stands in for the form. */
-const addingSingle = ref(false)
-
 function addSingle(food: Food, grams: number) {
   const meal = wrapSingleFood(food, grams, [
     ...available.value.map((match) => match.template),
@@ -95,7 +102,7 @@ function addSingle(food: Food, grams: number) {
   if (!known) created.value.push(meal)
 
   meals.value.push(meal.id)
-  addingSingle.value = false
+  emit('update:sub', undefined)
 }
 
 const names = computed(
@@ -169,7 +176,7 @@ async function save() {
 </script>
 
 <template>
-  <SingleFoodStep v-if="addingSingle" @add="addSingle" @back="addingSingle = false" />
+  <SingleFoodStep v-if="sub === 'single-food'" @add="addSingle" @back="emit('back')" />
 
   <section v-else class="card">
     <p class="hint">
@@ -231,7 +238,14 @@ async function save() {
 
     <div class="row">
       <span />
-      <button type="button" class="ghost small single" @click="addingSingle = true">
+      <!-- Held while a save is in flight: opening a step changes the host's
+           `choice`, which clears its `busy` and so frees its Back (#117). -->
+      <button
+        type="button"
+        class="ghost small single"
+        :disabled="saving"
+        @click="emit('update:sub', 'single-food')"
+      >
         Add a single food
       </button>
     </div>

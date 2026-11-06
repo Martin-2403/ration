@@ -1240,6 +1240,354 @@ describe('LogView', () => {
     })
   })
 
+  describe('steps inside a form (#130)', () => {
+    /**
+     * The food pickers inside the day and meal forms are steps of the same
+     * stack as everything else in this view. A native back used to be read as
+     * "leave the form" and threw the unsaved work away, while the in-form Back
+     * only returned to the form; now both are one step.
+     */
+    type Wrapper = Awaited<ReturnType<typeof render>>
+
+    const inputValue = (wrapper: Wrapper, selector: string) =>
+      (wrapper.find(selector).element as HTMLInputElement).value
+
+    /** Chooses a food by name in whichever picker is showing. */
+    const chooseFood = async (wrapper: Wrapper, name: string) => {
+      await wrapper
+        .findAll('.results button')
+        .find((button) => button.text().includes(name))!
+        .trigger('click')
+      await flushPromises()
+    }
+
+    describe('the day form', () => {
+      const startDay = async (wrapper: Wrapper) => {
+        await openDays(wrapper)
+        await optionNamed(wrapper, 'Build a day').trigger('click')
+        await flushPromises()
+        await wrapper.find('#day-name').setValue('Snack day')
+        await buttonNamed(wrapper, 'Add meal').trigger('click')
+        await flushPromises()
+      }
+
+      const openSingle = async (wrapper: Wrapper) => {
+        await buttonNamed(wrapper, 'Add a single food').trigger('click')
+        await flushPromises()
+      }
+
+      /** What the day held before the sub-step opened. */
+      const expectDayIntact = (wrapper: Wrapper) => {
+        expect(inputValue(wrapper, '#day-name')).toBe('Snack day')
+        expect(wrapper.findAll('.meal-name')).toHaveLength(1)
+      }
+
+      const leftTheForm = async (wrapper: Wrapper) => {
+        await vi.waitFor(() => expect(wrapper.find('#day-name').exists()).toBe(false))
+        expect(optionNamed(wrapper, 'Build a day')).toBeDefined()
+      }
+
+      it('returns to the day, name and meals intact, on a native back, and a second back leaves it', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        expect(stepOf()).toBe(2)
+
+        await openSingle(wrapper)
+        expect(wrapper.find('#day-name').exists()).toBe(false)
+        expect(stepOf()).toBe(3)
+
+        history.back()
+        await vi.waitFor(() => expect(wrapper.find('#day-name').exists()).toBe(true))
+        expectDayIntact(wrapper)
+        expect(stepOf()).toBe(2)
+
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it('does the same from the amount step', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        await openSingle(wrapper)
+        await chooseFood(wrapper, 'Banana')
+        expect(wrapper.find('#single-grams').exists()).toBe(true)
+
+        history.back()
+        await vi.waitFor(() => expect(wrapper.find('#day-name').exists()).toBe(true))
+        expectDayIntact(wrapper)
+        expect(wrapper.find('#single-grams').exists()).toBe(false)
+      })
+
+      it('gives the same result from the in-form Back button as from the gesture', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        await openSingle(wrapper)
+
+        await buttonNamed(wrapper, '← Back to the day').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('#day-name').exists()).toBe(true)
+        expectDayIntact(wrapper)
+        await vi.waitFor(() => expect(stepOf()).toBe(2))
+
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it("steps back to the day from the view's own Back button too", async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        await openSingle(wrapper)
+
+        await buttonNamed(wrapper, '← Back').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('#day-name').exists()).toBe(true)
+        expectDayIntact(wrapper)
+        await vi.waitFor(() => expect(stepOf()).toBe(2))
+      })
+
+      it('lands in the day with the food added, and leaves no phantom step behind', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        await openSingle(wrapper)
+        await chooseFood(wrapper, 'Banana')
+        await wrapper.find('#single-grams').setValue('120')
+        await buttonNamed(wrapper, 'Add to the day').trigger('click')
+        await flushPromises()
+
+        expect(inputValue(wrapper, '#day-name')).toBe('Snack day')
+        expect(wrapper.findAll('.meal-name')).toHaveLength(2)
+        expect(wrapper.text()).toContain('Banana')
+        await vi.waitFor(() => expect(stepOf()).toBe(2))
+
+        // One back leaves the form: the sub-step's entry was consumed on add.
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it('keeps reusing one stored meal for the same food', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+
+        for (let i = 0; i < 2; i++) {
+          await openSingle(wrapper)
+          await chooseFood(wrapper, 'Banana')
+          await wrapper.find('#single-grams').setValue('120')
+          await buttonNamed(wrapper, 'Add to the day').trigger('click')
+          await flushPromises()
+          await vi.waitFor(() => expect(stepOf()).toBe(2))
+        }
+        expect(wrapper.findAll('.meal-name')).toHaveLength(3)
+
+        // Wrapped meals are only written with the day (#129).
+        expect(await db.mealTemplates.count()).toBe(0)
+
+        await buttonNamed(wrapper, 'Save the day').trigger('click')
+        await vi.waitFor(async () => expect(await db.dayTemplates.count()).toBe(1))
+        const [day] = await db.dayTemplates.toArray()
+        expect(day!.mealTemplateIds[1]).toBe(day!.mealTemplateIds[2])
+        expect(await db.mealTemplates.count()).toBe(1)
+      })
+
+      it('stores nothing from a food added and then cancelled', async () => {
+        const wrapper = await render()
+        await startDay(wrapper)
+        await openSingle(wrapper)
+        await chooseFood(wrapper, 'Banana')
+        await buttonNamed(wrapper, 'Add to the day').trigger('click')
+        await flushPromises()
+
+        await buttonNamed(wrapper, 'Cancel').trigger('click')
+        await leftTheForm(wrapper)
+        expect(await db.mealTemplates.count()).toBe(0)
+        expect(await db.dayTemplates.count()).toBe(0)
+      })
+
+      it('does not offer the single food while the day is being saved', async () => {
+        let release!: () => void
+        const pending = new Promise<void>((resolve) => (release = resolve))
+        const real = dayTemplates.put
+        vi.spyOn(dayTemplates, 'put').mockImplementation(async (template) => {
+          await pending
+          return real(template)
+        })
+
+        const wrapper = await render()
+        await startDay(wrapper)
+        await buttonNamed(wrapper, 'Save the day').trigger('click')
+
+        // A sub-step is a change of `choice`, which clears `busy` — that would
+        // re-enable Back for a write that is still in flight (#117).
+        expect(buttonNamed(wrapper, 'Add a single food').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('.back').attributes('disabled')).toBeDefined()
+
+        release()
+        await vi.waitFor(() => expect(wrapper.find('#day-name').exists()).toBe(false))
+        vi.restoreAllMocks()
+      })
+    })
+
+    describe('the meal form', () => {
+      const startMeal = async (wrapper: Wrapper) => {
+        await openMeals(wrapper)
+        await optionNamed(wrapper, 'Build a meal').trigger('click')
+        await flushPromises()
+        await wrapper.find('#template-name').setValue('Muesli')
+        await wrapper.find('#slot-0-label').setValue('Base')
+      }
+
+      const openPicker = async (wrapper: Wrapper, slot = 0) => {
+        await wrapper
+          .findAll('button')
+          .filter((button) => button.text() === 'Add a food')
+          [slot]!.trigger('click')
+        await flushPromises()
+      }
+
+      const expectMealIntact = (wrapper: Wrapper) => {
+        expect(inputValue(wrapper, '#template-name')).toBe('Muesli')
+        expect(inputValue(wrapper, '#slot-0-label')).toBe('Base')
+      }
+
+      const leftTheForm = async (wrapper: Wrapper) => {
+        await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(false))
+        expect(optionNamed(wrapper, 'Build a meal')).toBeDefined()
+      }
+
+      it('returns to the meal, name and slots intact, on a native back, and a second back leaves it', async () => {
+        const wrapper = await render()
+        await startMeal(wrapper)
+        expect(stepOf()).toBe(2)
+
+        await openPicker(wrapper)
+        expect(wrapper.find('#template-name').exists()).toBe(false)
+        expect(stepOf()).toBe(3)
+
+        history.back()
+        await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(true))
+        expectMealIntact(wrapper)
+        expect(stepOf()).toBe(2)
+
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it('gives the same result from the in-form Back button as from the gesture', async () => {
+        const wrapper = await render()
+        await startMeal(wrapper)
+        await openPicker(wrapper)
+
+        await buttonNamed(wrapper, '← Back to the meal').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('#template-name').exists()).toBe(true)
+        expectMealIntact(wrapper)
+        await vi.waitFor(() => expect(stepOf()).toBe(2))
+
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it('lands in the slot with the food chosen, and leaves no phantom step behind', async () => {
+        const wrapper = await render()
+        await startMeal(wrapper)
+        await openPicker(wrapper)
+        await chooseFood(wrapper, 'Banana')
+
+        expectMealIntact(wrapper)
+        await vi.waitFor(() => expect(wrapper.find('.slot .options').text()).toContain('Banana'))
+        await vi.waitFor(() => expect(stepOf()).toBe(2))
+
+        history.back()
+        await leftTheForm(wrapper)
+        expect(stepOf()).toBe(1)
+      })
+
+      it('picks for the slot that asked, after steps back and forth', async () => {
+        const wrapper = await render()
+        await startMeal(wrapper)
+        await buttonNamed(wrapper, 'Add a slot').trigger('click')
+        await wrapper.find('#slot-1-label').setValue('Fruit')
+
+        await openPicker(wrapper, 1)
+        history.back()
+        await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(true))
+        expect(inputValue(wrapper, '#slot-1-label')).toBe('Fruit')
+
+        await openPicker(wrapper, 1)
+        await chooseFood(wrapper, 'Banana')
+
+        await vi.waitFor(() => expect(wrapper.findAll('.slot')[1]!.text()).toContain('Banana'))
+        expect(wrapper.findAll('.slot')[0]!.find('.options').exists()).toBe(false)
+      })
+
+      it('keeps the edits to a saved meal across the picker, and saves them under its own id', async () => {
+        await mealTemplates.put({
+          id: 'lunch',
+          name: 'Cheese sandwich',
+          slots: [
+            {
+              id: 'bread',
+              label: 'Bread',
+              kind: 'fixed',
+              options: ['oats'],
+              defaultOptionId: 'oats',
+              defaultGrams: 80,
+            },
+          ],
+        })
+
+        const wrapper = await render()
+        await openMeals(wrapper)
+        await labelled(wrapper, 'Edit Cheese sandwich').trigger('click')
+        await flushPromises()
+        await wrapper.find('#template-name').setValue('Cheese toastie')
+
+        await openPicker(wrapper)
+        history.back()
+        await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(true))
+
+        // Neither reset to the saved name nor re-read from the draft.
+        expect(inputValue(wrapper, '#template-name')).toBe('Cheese toastie')
+        expect(inputValue(wrapper, '#slot-0-label')).toBe('Bread')
+
+        await buttonNamed(wrapper, 'Save the changes').trigger('click')
+        await vi.waitFor(() => expect(optionNamed(wrapper, 'Cheese toastie')).toBeDefined())
+        const stored = await db.mealTemplates.toArray()
+        expect(stored).toHaveLength(1)
+        expect(stored[0]).toMatchObject({ id: 'lunch', name: 'Cheese toastie' })
+        expect(stored[0]!.slots[0]!.id).toBe('bread')
+      })
+
+      it('does not offer the picker while the meal is being saved', async () => {
+        let release!: () => void
+        const pending = new Promise<void>((resolve) => (release = resolve))
+        const real = mealTemplates.put
+        vi.spyOn(mealTemplates, 'put').mockImplementation(async (template) => {
+          await pending
+          return real(template)
+        })
+
+        const wrapper = await render()
+        await startMeal(wrapper)
+        await openPicker(wrapper)
+        await chooseFood(wrapper, 'Banana')
+        await vi.waitFor(() => expect(wrapper.find('.slot .options').exists()).toBe(true))
+        await buttonNamed(wrapper, 'Save the meal').trigger('click')
+
+        expect(buttonNamed(wrapper, 'Add a food').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('.back').attributes('disabled')).toBeDefined()
+
+        release()
+        await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(false))
+        vi.restoreAllMocks()
+      })
+    })
+  })
+
   describe('backup prompt (#147)', () => {
     const logPorridge = async (wrapper: Awaited<ReturnType<typeof render>>) => {
       await openMeals(wrapper)
