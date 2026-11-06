@@ -4,11 +4,13 @@
  * from useWindow, the targets from the config store, and every figure from
  * evaluation.ts — nothing here does arithmetic of its own.
  */
+import { ChevronRight } from '@lucide/vue'
 import { computed } from 'vue'
 
 import NutrientBar from '../components/NutrientBar.vue'
 import { useWindow } from '../composables/useWindow'
 import { byUrgency, evaluate } from '../evaluation'
+import { hasNoData } from '../nutrient-display'
 import { useConfigStore } from '../stores/config'
 
 const WINDOWS = [7, 30]
@@ -17,6 +19,19 @@ const config = useConfigStore()
 const { days, window, entries, loading, coverage } = useWindow()
 
 const evaluations = computed(() => byUrgency(evaluate(entries.value, config.targets, window.value)))
+
+/**
+ * Nutrients no contributor supplied a value for, split from the rest (#86).
+ * Only `hasNoData` qualifies: a no-target nutrient still renders a figure, and
+ * a measured zero is a value (§3). A filter keeps each list in `byUrgency`'s
+ * order, so the measured rows and the no-target tier rank exactly as before.
+ */
+const measured = computed(() =>
+  evaluations.value.filter((evaluation) => !hasNoData(evaluation.intake)),
+)
+const unmeasured = computed(() =>
+  evaluations.value.filter((evaluation) => hasNoData(evaluation.intake)),
+)
 
 /** Nothing logged means no denominator, so there is nothing to compare (§9). */
 const nothingLogged = computed(() => coverage.value.logged === 0)
@@ -101,7 +116,7 @@ const hasAnyTarget = computed(() =>
           </p>
 
           <NutrientBar
-            v-for="evaluation in evaluations"
+            v-for="evaluation in measured"
             :key="evaluation.nutrient"
             :nutrient="evaluation.nutrient"
             :total="evaluation.intake"
@@ -109,6 +124,30 @@ const hasAnyTarget = computed(() =>
             :limit="evaluation.limit"
             :origin="evaluation.origin"
           />
+
+          <!-- Collapsed, not dropped: the count still states the absence (§3)
+               and expanding shows every row as it always rendered. Native
+               details/summary, so keyboard and screen-reader behaviour come
+               with it. Nothing renders when there are none to group. -->
+          <details v-if="unmeasured.length > 0" class="no-data">
+            <summary>
+              <ChevronRight :size="16" :stroke-width="1.5" aria-hidden="true" />
+              <span>
+                {{ unmeasured.length }}
+                {{ unmeasured.length === 1 ? 'nutrient' : 'nutrients' }} with no data
+              </span>
+            </summary>
+
+            <NutrientBar
+              v-for="evaluation in unmeasured"
+              :key="evaluation.nutrient"
+              :nutrient="evaluation.nutrient"
+              :total="evaluation.intake"
+              :target="evaluation.target"
+              :limit="evaluation.limit"
+              :origin="evaluation.origin"
+            />
+          </details>
         </template>
       </template>
     </section>
@@ -200,8 +239,57 @@ h1 {
   color: var(--ink-soft);
 }
 
-/* The first bar sits under the explanatory line rather than against it. */
-.card :deep(.row:first-of-type) {
+/* The first bar sits under the explanatory line rather than against it. Direct
+   children only: the rows inside the no-data group must not pick this up. */
+.card > :deep(.row:first-of-type),
+.explain + .no-data {
   margin-top: var(--space-4);
+}
+
+/* The group reads as one more row of the list: same hairline above it, and a
+   summary that is interactive without a button's fill (§15 keeps the pill for
+   primary actions) — an ink label with a chevron, and a hover tint. */
+.no-data {
+  border-top: 1px solid var(--line);
+}
+
+.no-data summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* The 44px touch floor AppNav and IconAction document. */
+  min-height: 2.75rem;
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  /* The native marker is replaced by the chevron. */
+  list-style: none;
+  border-radius: var(--radius-control);
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.no-data summary::-webkit-details-marker {
+  display: none;
+}
+
+.no-data summary:hover {
+  background: var(--primary-tint);
+}
+
+/* A long label wraps beside the chevron instead of pushing past the card. */
+.no-data summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.no-data summary svg {
+  flex: none;
+  color: var(--ink-soft);
+  /* Duration comes from a token, which reduced motion collapses (§15). */
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.no-data[open] summary svg {
+  transform: rotate(90deg);
 }
 </style>
