@@ -332,16 +332,14 @@ describe('MealTemplateForm, correcting a saved meal', () => {
       expect(wrapper.find('#template-name').exists()).toBe(false)
     })
 
-    it('leaves the choice of where to go to the host when Back is tapped', async () => {
+    it('leaves the way out of the picker to the host, so there is one Back for the page (#95)', async () => {
       const wrapper = await render()
       await buttonNamed(wrapper, 'Add a food').trigger('click')
       await flushPromises()
 
-      await buttonNamed(wrapper, '← Back to the meal').trigger('click')
-
-      // It does not close the picker itself: the host's history must agree.
-      expect(wrapper.emitted('back')).toHaveLength(1)
-      expect(wrapper.find('#template-name').exists()).toBe(false)
+      // The host's step history owns leaving it, and the host draws the control.
+      expect(wrapper.find('.results').exists()).toBe(true)
+      expect(wrapper.find('.back').exists()).toBe(false)
     })
 
     it('asks the host to close the picker once a food is chosen, and keeps what was typed', async () => {

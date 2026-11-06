@@ -14,10 +14,8 @@ import { parseAmount } from '../parse-amount'
 import type { Food } from '../types'
 import FoodPicker from './FoodPicker.vue'
 
-const emit = defineEmits<{
-  add: [food: Food, grams: number]
-  back: []
-}>()
+// No way out of its own: the host's Back is the one control for the page (#95).
+const emit = defineEmits<{ add: [food: Food, grams: number] }>()
 
 const food = ref<Food | undefined>(undefined)
 /** Typed, not a number: the field is text and we parse it (see parse-amount.ts). */
@@ -36,8 +34,6 @@ function add() {
 
 <template>
   <section class="card">
-    <button type="button" class="back" @click="emit('back')">← Back to the day</button>
-
     <FoodPicker v-if="!food" purpose="choose" @select="food = $event" />
 
     <template v-else>
@@ -174,18 +170,5 @@ button:disabled {
   color: var(--ink);
   background: none;
   border-color: var(--ink-soft);
-}
-
-.back {
-  justify-self: start;
-  color: var(--ink-soft);
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-.back:hover:not(:disabled) {
-  color: var(--ink);
-  background: none;
 }
 </style>

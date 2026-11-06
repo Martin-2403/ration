@@ -327,7 +327,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(await db.mealTemplates.count()).toBe(0)
     })
 
-    it('is a step of the host: asks to open, leaves Back to it, and asks to close once added (#130)', async () => {
+    it('is a step of the host: asks to open, leaves leaving it to the host, and asks to close once added (#130)', async () => {
       const wrapper = await render()
       await wrapper.find('#day-name').setValue('Snack day')
 
@@ -336,10 +336,9 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(wrapper.emitted('update:sub')).toEqual([['single-food']])
       expect(wrapper.find('#day-name').exists()).toBe(false)
 
-      // It does not close the step itself: the host's history must agree.
-      await buttonNamed(wrapper, '← Back to the day').trigger('click')
-      expect(wrapper.emitted('back')).toHaveLength(1)
-      expect(wrapper.find('#day-name').exists()).toBe(false)
+      // It draws no Back of its own, so it cannot close the step behind the
+      // host's history; the host's single control does (#95).
+      expect(wrapper.find('.back').exists()).toBe(false)
 
       await wrapper
         .findAll('.results button')

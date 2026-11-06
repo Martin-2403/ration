@@ -37,8 +37,6 @@ const { draft, sub } = defineProps<{
 
 const emit = defineEmits<{
   'update:sub': [sub: { picking: number } | undefined]
-  /** Leave the current step for the one before it, as the host's Back does. */
-  back: []
   /** A meal that did not exist before. */
   saved: [template: NewMealTemplate]
   /** The same meal, corrected. */
@@ -206,10 +204,9 @@ async function save() {
 
 <template>
   <section class="card">
-    <template v-if="sub !== undefined">
-      <button type="button" class="back" @click="emit('back')">← Back to the meal</button>
-      <FoodPicker purpose="choose" @select="choose" />
-    </template>
+    <!-- The way out of the picker is the host's Back, one control for the page
+         (#95). -->
+    <FoodPicker v-if="sub !== undefined" purpose="choose" @select="choose" />
 
     <template v-else>
       <p class="hint">
@@ -458,18 +455,5 @@ button:disabled {
 .small {
   font-size: var(--text-caption);
   padding: var(--space-1) var(--space-3);
-}
-
-.back {
-  justify-self: start;
-  color: var(--ink-soft);
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-.back:hover {
-  color: var(--ink);
-  background: none;
 }
 </style>

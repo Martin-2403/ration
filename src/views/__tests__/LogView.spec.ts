@@ -89,7 +89,7 @@ describe('LogView', () => {
     await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(false))
     expect(wrapper.find('.back').exists()).toBe(true)
 
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to Log').trigger('click')
     await flushPromises()
     expect(wrapper.find('.back').exists()).toBe(false)
     // The button consumed its own entry, so the history is not one ahead.
@@ -606,7 +606,7 @@ describe('LogView', () => {
     expect(wrapper.text()).toContain('Remove Cheese sandwich?')
 
     // Left by the top-level back button, not by this row's own Cancel.
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to Log').trigger('click')
     await openMeals(wrapper)
 
     // Coming back should show the ordinary row — a tap here landed on
@@ -727,7 +727,7 @@ describe('LogView', () => {
     await labelled(wrapper, 'Remove Workday').trigger('click')
     expect(wrapper.text()).toContain('Remove Workday?')
 
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to Log').trigger('click')
     await openDays(wrapper)
 
     expect(wrapper.text()).not.toContain('Remove Workday?')
@@ -817,52 +817,138 @@ describe('LogView', () => {
     expect((wrapper.find('#log-date').element as HTMLInputElement).value).toBe(yesterday())
   })
 
-  it('reads the same at every step, however many destinations it has', async () => {
-    // #118: the label used to name its destination — "Other meals", "Other
-    // days", "Other foods", "Everything else" — four readings of one button
-    // that Martin found harder to parse than it was worth. goBack()'s own
-    // per-step destination is unchanged; only the word on the button is.
-    await mealTemplates.put({
-      id: 'lunch',
-      name: 'Cheese sandwich',
-      slots: [
-        {
-          id: 'bread',
-          label: 'Bread',
-          kind: 'fixed',
-          options: ['oats'],
-          defaultOptionId: 'oats',
-          defaultGrams: 80,
+  describe('the back control at each surface (#95)', () => {
+    /**
+     * One way out per surface, above the card in the same place and style, named
+     * for where it lands — what leaving abandons. #118 had flattened the labels
+     * to "← Back" because six different strings for one pattern read as noise;
+     * they are one string again here, computed from `parentOf` in one place, so
+     * they cannot disagree with where the button actually goes.
+     */
+    type Wrapper = Awaited<ReturnType<typeof render>>
+
+    const top = '← Back to Log'
+    const backs = (wrapper: Wrapper) => wrapper.findAll('.back')
+
+    const surfaces: Array<{
+      name: string
+      open: (wrapper: Wrapper) => Promise<void>
+      label: string
+      /** What the one step back lands on: its label, or undefined at the top. */
+      then: string | undefined
+    }> = [
+      { name: 'the meals', open: openMeals, label: top, then: undefined },
+      {
+        name: 'a meal to log',
+        open: async (wrapper) => {
+          await openMeals(wrapper)
+          await optionNamed(wrapper, 'Porridge').trigger('click')
         },
-      ],
+        label: '← Back to the meals',
+        then: top,
+      },
+      {
+        name: 'the meal form',
+        open: async (wrapper) => {
+          await openMeals(wrapper)
+          await optionNamed(wrapper, 'Build a meal').trigger('click')
+        },
+        label: '← Back to the meals',
+        then: top,
+      },
+      { name: 'the days', open: openDays, label: top, then: undefined },
+      {
+        name: 'a day being run',
+        open: async (wrapper) => {
+          await openDays(wrapper)
+          await optionNamed(wrapper, 'Workday').trigger('click')
+        },
+        label: '← Back to the days',
+        then: top,
+      },
+      {
+        name: 'the day form',
+        open: async (wrapper) => {
+          await openDays(wrapper)
+          await optionNamed(wrapper, 'Build a day').trigger('click')
+        },
+        label: '← Back to the days',
+        then: top,
+      },
+      {
+        name: 'the picker for a saved food',
+        open: async (wrapper) => {
+          await optionNamed(wrapper, 'A food you have already').trigger('click')
+        },
+        label: top,
+        then: undefined,
+      },
+      {
+        name: 'the picker for a variation',
+        open: async (wrapper) => {
+          await optionNamed(wrapper, 'A variation of a food').trigger('click')
+        },
+        label: top,
+        then: undefined,
+      },
+      {
+        name: 'the form for a variation',
+        open: async (wrapper) => {
+          await optionNamed(wrapper, 'A variation of a food').trigger('click')
+          await flushPromises()
+          await wrapper
+            .findAll('.results button')
+            .find((button) => button.text().includes('Banana'))!
+            .trigger('click')
+        },
+        label: '← Back to the foods',
+        then: top,
+      },
+      {
+        name: 'the form for a food by hand',
+        open: async (wrapper) => {
+          await optionNamed(wrapper, 'A food by hand').trigger('click')
+        },
+        label: top,
+        then: undefined,
+      },
+    ]
+
+    it.each(surfaces)('offers one back at $name, named for where it goes', async (surface) => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+      const wrapper = await render()
+      await surface.open(wrapper)
+      await flushPromises()
+
+      expect(backs(wrapper).map((back) => back.text())).toEqual([surface.label])
+
+      // The same function the gesture goes through, so button and gesture land
+      // on the same step and leave the same history behind (#119).
+      const before = stepOf()
+      await backs(wrapper)[0]!.trigger('click')
+      await flushPromises()
+
+      expect(backs(wrapper).map((back) => back.text())).toEqual(
+        surface.then === undefined ? [] : [surface.then],
+      )
+      await vi.waitFor(() => expect(stepOf()).toBe(before - 1))
     })
-    await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
-    const wrapper = await render()
 
-    // .back, not buttonNamed: buttonNamed matches by exact text, so finding
-    // one and then asserting its own text back would be tautological — it can
-    // only ever equal what was searched for. Selecting by class instead means
-    // a reverted per-destination label fails the assertion cleanly, rather
-    // than surfacing as "no button found" if the text no longer matches.
-    const label = () => wrapper.find('.back').text()
-    const back = () => wrapper.find('.back').trigger('click')
+    it('agrees with the gesture about where each back goes', async () => {
+      await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
+      const wrapper = await render()
+      await openMeals(wrapper)
+      await optionNamed(wrapper, 'Build a meal').trigger('click')
+      await flushPromises()
+      expect(backs(wrapper)[0]!.text()).toBe('← Back to the meals')
 
-    await openMeals(wrapper)
-    expect(label()).toBe('← Back')
-    await optionNamed(wrapper, 'Porridge').trigger('click')
-    expect(label()).toBe('← Back')
-    await back() // template -> meals
-    await back() // meals -> top level
+      history.back()
+      await vi.waitFor(() => expect(wrapper.find('#template-name').exists()).toBe(false))
 
-    await openDays(wrapper)
-    expect(label()).toBe('← Back')
-    await optionNamed(wrapper, 'Workday').trigger('click')
-    expect(label()).toBe('← Back')
-    await back() // day -> days
-    await back() // days -> top level
-
-    await optionNamed(wrapper, 'A food by hand').trigger('click')
-    expect(label()).toBe('← Back')
+      // Where the label said it would land.
+      expect(optionNamed(wrapper, 'Build a meal')).toBeDefined()
+      expect(backs(wrapper)[0]!.text()).toBe(top)
+    })
   })
 
   it('steps back to the meals rather than out of them', async () => {
@@ -872,7 +958,7 @@ describe('LogView', () => {
 
     // One step out, not two. With the meals behind an entry of their own, a
     // single coarse back button discarded both (#98).
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to the meals').trigger('click')
 
     expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
     expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
@@ -892,7 +978,7 @@ describe('LogView', () => {
 
     // Picking the wrong source used to mean going out to the options and
     // losing everything typed — there was no step back at all (#95).
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to the foods').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('#picker-query').exists()).toBe(true)
@@ -902,7 +988,7 @@ describe('LogView', () => {
     const wrapper = await render()
     await optionNamed(wrapper, 'A food by hand').trigger('click')
 
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to Log').trigger('click')
 
     expect(optionNamed(wrapper, 'A meal')).toBeDefined()
     expect(await db.logEntries.count()).toBe(0)
@@ -1015,7 +1101,7 @@ describe('LogView', () => {
     await optionNamed(wrapper, 'Workday').trigger('click')
     await flushPromises()
 
-    await buttonNamed(wrapper, '← Back').trigger('click')
+    await buttonNamed(wrapper, '← Back to the days').trigger('click')
 
     // One step out, as everywhere else on this screen (#98, #95).
     expect(optionNamed(wrapper, 'Workday')).toBeDefined()
@@ -1405,10 +1491,15 @@ describe('LogView', () => {
         expect(wrapper.find('#single-grams').exists()).toBe(false)
       })
 
-      it('gives the same result from the in-form Back button as from the gesture', async () => {
+      it('gives the same result from the Back button as from the gesture', async () => {
         const wrapper = await render()
         await startDay(wrapper)
         await openSingle(wrapper)
+
+        // One control, not the view's and the form's both: they did the same
+        // thing, and two of them at the top of one card read as two choices.
+        expect(wrapper.findAll('.back').map((back) => back.text())).toEqual(['← Back to the day'])
+        expect(wrapper.findAll('button').filter((b) => b.text().startsWith('←'))).toHaveLength(1)
 
         await buttonNamed(wrapper, '← Back to the day').trigger('click')
         await flushPromises()
@@ -1421,16 +1512,14 @@ describe('LogView', () => {
         expect(stepOf()).toBe(1)
       })
 
-      it("steps back to the day from the view's own Back button too", async () => {
+      it('names the way out of the amount step for the day too', async () => {
         const wrapper = await render()
         await startDay(wrapper)
         await openSingle(wrapper)
+        await chooseFood(wrapper, 'Banana')
 
-        await buttonNamed(wrapper, '← Back').trigger('click')
-        await flushPromises()
-        expect(wrapper.find('#day-name').exists()).toBe(true)
-        expectDayIntact(wrapper)
-        await vi.waitFor(() => expect(stepOf()).toBe(2))
+        // Past the picker, still one step from the day (#130).
+        expect(wrapper.findAll('.back').map((back) => back.text())).toEqual(['← Back to the day'])
       })
 
       it('lands in the day with the food added, and leaves no phantom step behind', async () => {
@@ -1561,10 +1650,13 @@ describe('LogView', () => {
         expect(stepOf()).toBe(1)
       })
 
-      it('gives the same result from the in-form Back button as from the gesture', async () => {
+      it('gives the same result from the Back button as from the gesture', async () => {
         const wrapper = await render()
         await startMeal(wrapper)
         await openPicker(wrapper)
+
+        expect(wrapper.findAll('.back').map((back) => back.text())).toEqual(['← Back to the meal'])
+        expect(wrapper.findAll('button').filter((b) => b.text().startsWith('←'))).toHaveLength(1)
 
         await buttonNamed(wrapper, '← Back to the meal').trigger('click')
         await flushPromises()

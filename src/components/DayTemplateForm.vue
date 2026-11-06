@@ -45,8 +45,6 @@ const { draft, existing, sub } = defineProps<{
 
 const emit = defineEmits<{
   'update:sub': [sub: 'single-food' | undefined]
-  /** Leave the current step for the one before it, as the host's Back does. */
-  back: []
   /** A day that did not exist before, whether built or copied. */
   saved: [template: NewDayTemplate]
   /** The same day, corrected. */
@@ -176,7 +174,7 @@ async function save() {
 </script>
 
 <template>
-  <SingleFoodStep v-if="sub === 'single-food'" @add="addSingle" @back="emit('back')" />
+  <SingleFoodStep v-if="sub === 'single-food'" @add="addSingle" />
 
   <section v-else class="card">
     <p class="hint">

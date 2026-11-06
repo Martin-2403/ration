@@ -320,6 +320,36 @@ function parentOf(current: Choice): Choice | undefined {
 }
 
 /**
+ * What the one Back control abandons, named by where it lands (#95).
+ *
+ * The single label for every step, computed from `parentOf` like `goBack` and
+ * `depth` are, so the words cannot say one place while the button goes to
+ * another. It is the only back control on any surface that takes input: the
+ * forms used to carry one of their own in a sub-step, which did the same thing
+ * as this one and put two of them above the same card.
+ */
+const backLabel = computed(() => {
+  const at = choice.value && parentOf(choice.value)
+
+  switch (at?.kind) {
+    case undefined:
+      return '← Back to Log'
+    case 'meals':
+      return '← Back to the meals'
+    case 'days':
+      return '← Back to the days'
+    case 'meal-form':
+      return '← Back to the meal'
+    case 'day-form':
+      return '← Back to the day'
+    case 'variation':
+      return '← Back to the foods'
+    default:
+      return '← Back'
+  }
+})
+
+/**
  * How many steps deep `choice` is, counted by walking `parentOf` to the options.
  * Only used to keep browser history in step with the view (#119); derived from
  * the same function as `goBack` so the two cannot drift apart.
@@ -458,7 +488,7 @@ async function logFood(food: NewFood, grams: number) {
       </ul>
 
       <template v-else>
-        <button type="button" class="back" :disabled="busy" @click="goBack">← Back</button>
+        <button type="button" class="back" :disabled="busy" @click="goBack">{{ backLabel }}</button>
 
         <ul v-if="choice.kind === 'meals'" class="options">
           <li v-for="match in templates" :key="match.template.id">
@@ -636,7 +666,6 @@ async function logFood(food: NewFood, grams: number) {
           :existing="choice.existing"
           :sub="choice.sub"
           @update:sub="setSub('day-form', $event)"
-          @back="goBack"
           @saved="savedDay"
           @updated="updatedDay"
           @cancel="goBack"
@@ -667,7 +696,6 @@ async function logFood(food: NewFood, grams: number) {
           :draft="choice.draft"
           :sub="choice.sub"
           @update:sub="setSub('meal-form', $event)"
-          @back="goBack"
           @saved="savedTemplate"
           @updated="updatedTemplate"
           @cancel="goBack"
