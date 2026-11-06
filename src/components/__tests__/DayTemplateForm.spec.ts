@@ -308,15 +308,6 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(await db.mealTemplates.count()).toBe(2)
     })
 
-    it('stores nothing when the day is cancelled', async () => {
-      const wrapper = await render()
-      await addSingle(wrapper, 'Banana', '120')
-      await buttonNamed(wrapper, 'Cancel').trigger('click')
-
-      expect(wrapper.emitted('cancel')).toHaveLength(1)
-      expect(await db.mealTemplates.count()).toBe(0)
-    })
-
     it('does not store a food that was removed from the day again', async () => {
       const wrapper = await render()
       await addSingle(wrapper, 'Banana', '120')
@@ -396,7 +387,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
     })
   })
 
-  it('holds Cancel disabled and announces busy from the save, leaving the release to the host (#117)', async () => {
+  it('announces busy from the save, leaving the release to the host (#117)', async () => {
     const draft: NewDayTemplate = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
     const wrapper = await render(draft, true)
 
@@ -412,7 +403,6 @@ describe('DayTemplateForm, correcting a saved day', () => {
 
     await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('busy')).toEqual([[true]])
 
     release()
@@ -420,8 +410,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await flushPromises()
 
     // Not released here: the host reloads and then leaves the form, and owns
-    // clearing `busy` until it has. Cancel stays disabled for the same span.
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+    // clearing `busy` until it has.
     expect(wrapper.emitted('busy')).toEqual([[true]])
   })
 
@@ -437,6 +426,5 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await flushPromises()
 
     expect(wrapper.emitted('busy')).toEqual([[true], [false]])
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
   })
 })

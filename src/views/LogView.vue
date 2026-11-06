@@ -668,7 +668,6 @@ async function logFood(food: NewFood, grams: number) {
           @update:sub="setSub('day-form', $event)"
           @saved="savedDay"
           @updated="updatedDay"
-          @cancel="goBack"
           @busy="busy = $event"
         />
 
@@ -698,7 +697,6 @@ async function logFood(food: NewFood, grams: number) {
           @update:sub="setSub('meal-form', $event)"
           @saved="savedTemplate"
           @updated="updatedTemplate"
-          @cancel="goBack"
           @busy="busy = $event"
         />
 

@@ -233,14 +233,14 @@ describe('LogView', () => {
     await vi.waitFor(() => expect(stepOf()).toBe(0))
   })
 
-  it('consumes the entry when a form is cancelled (#119)', async () => {
+  it('consumes the entry when a form is left by Back (#119)', async () => {
     const wrapper = await render()
     await openMeals(wrapper)
     await optionNamed(wrapper, 'Build a meal').trigger('click')
     await flushPromises()
     expect(stepOf()).toBe(2)
 
-    await buttonNamed(wrapper, 'Cancel').trigger('click')
+    await buttonNamed(wrapper, '← Back to the meals').trigger('click')
     await vi.waitFor(() => expect(stepOf()).toBe(1))
     expect(optionNamed(wrapper, 'Build a meal')).toBeDefined()
   })
@@ -921,6 +921,8 @@ describe('LogView', () => {
       await flushPromises()
 
       expect(backs(wrapper).map((back) => back.text())).toEqual([surface.label])
+      // Nor a Cancel beside the submit doing the same thing under another name.
+      expect(buttonNamed(wrapper, 'Cancel')).toBeUndefined()
 
       // The same function the gesture goes through, so button and gesture land
       // on the same step and leave the same history behind (#119).
@@ -1109,19 +1111,6 @@ describe('LogView', () => {
     expect(await db.logEntries.count()).toBe(0)
   })
 
-  it('cancels building a meal back to the meals, not out of them', async () => {
-    const wrapper = await render()
-    await openMeals(wrapper)
-    await optionNamed(wrapper, 'Build a meal').trigger('click')
-    await flushPromises()
-
-    // Cancel used to land on the options, two steps from where it started.
-    await buttonNamed(wrapper, 'Cancel').trigger('click')
-
-    expect(optionNamed(wrapper, 'Porridge')).toBeDefined()
-    expect(optionNamed(wrapper, 'A food by hand')).toBeUndefined()
-  })
-
   describe('a write that is still in flight (#117)', () => {
     /**
      * Leaving a branch unmounts the child that is writing, and Vue never
@@ -1281,7 +1270,7 @@ describe('LogView', () => {
       })
     })
 
-    it('holds Back, Cancel and the date disabled while a corrected meal is being saved', async () => {
+    it('holds Back and the date disabled while a corrected meal is being saved', async () => {
       await mealTemplates.put({
         id: 'lunch',
         name: 'Cheese sandwich',
@@ -1320,7 +1309,6 @@ describe('LogView', () => {
       await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
       expect(disabled(wrapper, '.back')).toBe(true)
-      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
       // The write has landed and the list is still being read. The form is
@@ -1331,7 +1319,6 @@ describe('LogView', () => {
       await flushPromises()
       expect(wrapper.find('#template-name').exists()).toBe(true)
       expect(disabled(wrapper, '.back')).toBe(true)
-      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
       reload.release()
@@ -1343,7 +1330,7 @@ describe('LogView', () => {
       expect(disabled(wrapper, '#log-date')).toBe(false)
     })
 
-    it('holds Back, Cancel and the date disabled while a corrected day is being saved', async () => {
+    it('holds Back and the date disabled while a corrected day is being saved', async () => {
       await dayTemplates.put({ id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] })
       const pending = gate()
       const real = dayTemplates.put
@@ -1368,7 +1355,6 @@ describe('LogView', () => {
       await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
       expect(disabled(wrapper, '.back')).toBe(true)
-      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
       // Same window as for a meal: written, reloading, form still showing.
@@ -1377,7 +1363,6 @@ describe('LogView', () => {
       await flushPromises()
       expect(wrapper.find('#day-name').exists()).toBe(true)
       expect(disabled(wrapper, '.back')).toBe(true)
-      expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
       expect(disabled(wrapper, '#log-date')).toBe(true)
 
       reload.release()
@@ -1566,7 +1551,7 @@ describe('LogView', () => {
         expect(await db.mealTemplates.count()).toBe(1)
       })
 
-      it('stores nothing from a food added and then cancelled', async () => {
+      it('stores nothing from a food added and then abandoned by Back', async () => {
         const wrapper = await render()
         await startDay(wrapper)
         await openSingle(wrapper)
@@ -1574,7 +1559,7 @@ describe('LogView', () => {
         await buttonNamed(wrapper, 'Add to the day').trigger('click')
         await flushPromises()
 
-        await buttonNamed(wrapper, 'Cancel').trigger('click')
+        await buttonNamed(wrapper, '← Back to the days').trigger('click')
         await leftTheForm(wrapper)
         expect(await db.mealTemplates.count()).toBe(0)
         expect(await db.dayTemplates.count()).toBe(0)

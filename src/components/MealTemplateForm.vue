@@ -41,7 +41,6 @@ const emit = defineEmits<{
   saved: [template: NewMealTemplate]
   /** The same meal, corrected. */
   updated: [template: NewMealTemplate]
-  cancel: []
   /**
    * Whether a save is in flight. The host holds its own way out disabled
    * while it is: leaving unmounts this form, and an emit from an unmounted
@@ -193,7 +192,7 @@ async function save() {
   } catch (error) {
     // Only a failed save hands the form back. After a successful one `saving`
     // and `busy` stay set: the host reloads and then leaves this form, and
-    // clearing them here would open a window in which Cancel or the host's own
+    // clearing them here would open a window in which the host's own
     // Back still works and its step would be overridden a moment later (#117).
     saving.value = false
     emit('busy', false)
@@ -295,9 +294,6 @@ async function save() {
           {{ problems.join(' · ') }}
         </p>
 
-        <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">
-          Cancel
-        </button>
         <button type="button" :disabled="!canSave" @click="save">
           {{ draft ? 'Save the changes' : 'Save the meal' }}
         </button>

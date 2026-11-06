@@ -215,14 +215,6 @@ describe('MealTemplateForm', () => {
     const [saved] = await db.mealTemplates.toArray()
     expect(saved!.slots[0]!.defaultGrams).toBe(62.5)
   })
-
-  it('leaves without saving on cancel', async () => {
-    const wrapper = await render()
-    await buttonNamed(wrapper, 'Cancel').trigger('click')
-
-    expect(wrapper.emitted('cancel')).toHaveLength(1)
-    expect(await db.mealTemplates.count()).toBe(0)
-  })
 })
 
 /**
@@ -288,7 +280,7 @@ describe('MealTemplateForm, correcting a saved meal', () => {
     expect(wrapper.emitted('saved')).toBeUndefined()
   })
 
-  it('holds Cancel disabled and announces busy from the save, leaving the release to the host (#117)', async () => {
+  it('announces busy from the save, leaving the release to the host (#117)', async () => {
     const wrapper = await render(saved('mine'))
 
     // Leaving mid-save unmounts the form, and an emit from an unmounted
@@ -303,7 +295,6 @@ describe('MealTemplateForm, correcting a saved meal', () => {
 
     await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('busy')).toEqual([[true]])
 
     release()
@@ -311,8 +302,7 @@ describe('MealTemplateForm, correcting a saved meal', () => {
     await flushPromises()
 
     // Not released here: the host reloads and then leaves the form, and owns
-    // clearing `busy` until it has. Cancel stays disabled for the same span.
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+    // clearing `busy` until it has.
     expect(wrapper.emitted('busy')).toEqual([[true]])
   })
 
@@ -404,6 +394,5 @@ describe('MealTemplateForm, correcting a saved meal', () => {
     await flushPromises()
 
     expect(wrapper.emitted('busy')).toEqual([[true], [false]])
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
   })
 })
