@@ -272,30 +272,34 @@ function goBack() {
   choice.value = current && parentOf(current)
 }
 
+type Choice = NonNullable<typeof choice.value>
+
+/** The choices that are a form with steps of its own, and what a step of each looks like. */
+type FormChoice = Extract<Choice, { sub?: unknown }>
+type FormChoiceOf<K extends FormChoice['kind']> = Extract<FormChoice, { kind: K }>
+
 /**
  * A form opening or finishing a step of its own (#130).
  *
  * Spreads the current choice, so `draft`/`existing` stay exactly what the form
  * was opened with: the form keeps the working copy, and a new object here must
  * not look like a different form.
+ *
+ * Keyed on `kind` so a form that is not the one on screen cannot move it: an
+ * update from a form that has since been left is dropped, not applied to
+ * whatever replaced it.
  */
-function setDaySub(sub: DayFormSub | undefined) {
+function setSub<K extends FormChoice['kind']>(kind: K, sub: FormChoiceOf<K>['sub']) {
   const current = choice.value
 
-  if (current?.kind !== 'day-form' || current.sub === sub) return
+  if (current?.kind !== kind) return
 
-  choice.value = { ...current, sub }
+  const form = current as FormChoiceOf<K>
+
+  if (form.sub === sub) return
+
+  choice.value = { ...form, sub } as Choice
 }
-
-function setMealSub(sub: MealFormSub | undefined) {
-  const current = choice.value
-
-  if (current?.kind !== 'meal-form' || current.sub === sub) return
-
-  choice.value = { ...current, sub }
-}
-
-type Choice = NonNullable<typeof choice.value>
 
 /** Where one step back from `current` lands: the single place that knows the flow's shape. */
 function parentOf(current: Choice): Choice | undefined {
@@ -629,7 +633,7 @@ async function logFood(food: NewFood, grams: number) {
           :draft="choice.draft"
           :existing="choice.existing"
           :sub="choice.sub"
-          @update:sub="setDaySub"
+          @update:sub="setSub('day-form', $event)"
           @back="goBack"
           @saved="savedDay"
           @updated="updatedDay"
@@ -660,7 +664,7 @@ async function logFood(food: NewFood, grams: number) {
           v-else-if="choice.kind === 'meal-form'"
           :draft="choice.draft"
           :sub="choice.sub"
-          @update:sub="setMealSub"
+          @update:sub="setSub('meal-form', $event)"
           @back="goBack"
           @saved="savedTemplate"
           @updated="updatedTemplate"
