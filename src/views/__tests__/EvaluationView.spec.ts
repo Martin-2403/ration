@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addLocalDays, startOfLocalDay } from '../../dates'
+import { NUTRIENTS, type NutrientKey, type NutrientTotals } from '../../data/nutrients'
 import { db, log, nutrientGoals } from '../../db'
 import type { NewLogEntry } from '../../types'
 import EvaluationView from '../EvaluationView.vue'
@@ -29,6 +30,25 @@ const saltOnly = (at: number, salt: number): NewLogEntry => ({
   items: [{ kind: 'food', foodId: 'oats', grams: 50 }],
   totals: { salt: { amount: salt, bySource: { user: salt }, missing: 0 } },
 })
+
+/**
+ * An entry carrying a measured value for every tracked nutrient except the ones
+ * named, which it carries nothing for at all — what the log holds until the
+ * resolver (§4) fills in the rest. `overrides` replaces a total outright.
+ */
+const allExcept = (absent: NutrientKey[], overrides: NutrientTotals = {}): NewLogEntry => {
+  const totals: NutrientTotals = {}
+  for (const key of Object.keys(NUTRIENTS) as NutrientKey[]) {
+    if (!absent.includes(key)) totals[key] = { amount: 1, bySource: { user: 1 }, missing: 0 }
+  }
+
+  return {
+    name: 'Day',
+    timestamp: midday(-1),
+    items: [],
+    totals: { ...totals, ...overrides },
+  }
+}
 
 const midday = (dayOffset: number) => addLocalDays(startOfLocalDay(), dayOffset) + 12 * 3_600_000
 
@@ -102,7 +122,12 @@ describe('EvaluationView', () => {
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('500'))
 
-    const labels = wrapper.findAll('.label').map((label) => label.text())
+    // The main list only: the no-data group follows it (#86), so the last
+    // label overall is now a no-data nutrient rather than the no-target one.
+    const labels = wrapper
+      .findAll('.label')
+      .filter((label) => label.element.closest('details') === null)
+      .map((label) => label.text())
 
     // Relative, not absolute: ranking by the raw gap would sort by unit size
     // and bury every micronutrient under the macros.
@@ -141,5 +166,118 @@ describe('EvaluationView', () => {
     // Dropping it would hide logged intake for the three nutrients #16 left
     // without a direction, which is the opposite of what §3 asks for.
     expect(wrapper.text()).toContain('No target')
+  })
+
+  describe('no-data group (#86)', () => {
+    const group = (wrapper: Awaited<ReturnType<typeof render>>) => wrapper.find('details.no-data')
+    const labelsIn = (root: { findAll: (selector: string) => { text: () => string }[] }) =>
+      root.findAll('.label').map((label) => label.text())
+
+    it('collapses the no-data nutrients behind a counted summary', async () => {
+      await log.add({
+        name: 'Day',
+        timestamp: midday(-1),
+        items: [],
+        totals: {
+          energy: { amount: 500, bySource: { user: 500 }, missing: 0 },
+          protein: { amount: 45, bySource: { user: 45 }, missing: 0 },
+        },
+      })
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('500'))
+
+      const details = group(wrapper)
+      expect(details.exists()).toBe(true)
+      // Collapsed by default: the count carries the claim, not the rows.
+      expect(details.attributes('open')).toBeUndefined()
+
+      const inside = labelsIn(details)
+      expect(details.find('summary').text()).toBe(`${inside.length} nutrients with no data`)
+      expect(inside.length).toBeGreaterThan(1)
+
+      // Exactly the nutrients nothing supplied a value for, each stated as such.
+      expect(inside).not.toContain('Energy')
+      expect(inside).not.toContain('Protein')
+      expect(inside).toContain('Biotin')
+      expect(details.findAll('.row').every((row) => row.text().includes('No data'))).toBe(true)
+
+      // And the measured rows stay outside it, still stating their figures.
+      const outside = labelsIn(wrapper).filter((label) => !inside.includes(label))
+      expect(outside).toEqual(['Energy', 'Protein'])
+    })
+
+    it('leaves no-target nutrients in the main list', async () => {
+      await log.add({
+        name: 'Day',
+        timestamp: midday(-1),
+        items: [],
+        totals: {
+          energy: { amount: 500, bySource: { user: 500 }, missing: 0 },
+          salt: { amount: 3, bySource: { user: 3 }, missing: 0 },
+        },
+      })
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('500'))
+
+      // A figure plus "No target" is information, not an absence (§3, #82).
+      expect(labelsIn(group(wrapper))).not.toContain('Salt')
+      expect(
+        labelsIn(wrapper).filter((label) => !labelsIn(group(wrapper)).includes(label)),
+      ).toEqual(['Energy', 'Salt'])
+      expect(wrapper.text()).toContain('No target')
+    })
+
+    it('does not group a nutrient measured as zero', async () => {
+      await log.add(allExcept([], { biotin: { amount: 0, bySource: { user: 0 }, missing: 0 } }))
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Biotin'))
+
+      // Zero is a value: a food genuinely containing none is a measurement.
+      expect(group(wrapper).exists()).toBe(false)
+      expect(labelsIn(wrapper)).toContain('Biotin')
+    })
+
+    it('renders no disclosure when every nutrient has data', async () => {
+      await log.add(allExcept([]))
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('Biotin'))
+
+      expect(group(wrapper).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('with no data')
+    })
+
+    it('counts a single nutrient in the singular', async () => {
+      await log.add(allExcept(['biotin']))
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('with no data'))
+
+      expect(group(wrapper).find('summary').text()).toBe('1 nutrient with no data')
+      expect(labelsIn(group(wrapper))).toEqual(['Biotin'])
+    })
+
+    it('opens on the summary and keeps every row reachable', async () => {
+      await log.add(allExcept(['biotin', 'chloride']))
+      const wrapper = await render()
+      await vi.waitFor(() => expect(wrapper.text()).toContain('with no data'))
+
+      const details = group(wrapper)
+      await details.find('summary').trigger('click')
+
+      expect((details.element as HTMLDetailsElement).open).toBe(true)
+      expect(labelsIn(details)).toEqual(['Biotin', 'Chloride'])
+      expect(details.text()).toContain('No data')
+
+      await details.find('summary').trigger('click')
+      expect((details.element as HTMLDetailsElement).open).toBe(false)
+    })
+
+    it('groups the same way in the 30-day window', async () => {
+      await log.add(allExcept(['biotin']))
+      const wrapper = await render()
+      await windowButton(wrapper, '30 days').trigger('click')
+      await vi.waitFor(() => expect(wrapper.text()).toContain('1 of 30 days logged'))
+
+      expect(group(wrapper).find('summary').text()).toBe('1 nutrient with no data')
+    })
   })
 })
