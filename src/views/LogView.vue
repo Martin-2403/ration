@@ -96,8 +96,13 @@ const choice = ref<
  * What the last flow produced. `logged: false` is a real outcome, not an empty
  * state: a day whose every meal was skipped wrote nothing, and saying "Logged"
  * over it would claim intake that was never recorded (§3).
+ *
+ * `corrected` is the other way to write nothing to the log: a food was stored
+ * on its own (#93), so the outcome names the food rather than a meal.
  */
-const outcome = ref<{ logged: boolean; what: string; date: string } | undefined>()
+const outcome = ref<
+  { logged: boolean; what: string; date: string; corrected?: boolean } | undefined
+>()
 
 /**
  * True while the form or builder on screen is mid-write, and for the reload
@@ -394,6 +399,40 @@ const daysSummary = computed(() =>
  */
 const writing = ref(false)
 
+/**
+ * Stores a corrected food without logging it (#93).
+ *
+ * Lands on the picker the source was chosen from — the step Back goes to — rather
+ * than on the options. Whoever fixed a figure was correcting the food, not eating
+ * it, so this is the same call `updatedTemplate` and `updatedDay` make for a meal
+ * and a day: back to the list it came from, where the corrected food is still
+ * findable and another can be fixed next. Finishing to the options instead would
+ * read as a logging flow that ended.
+ *
+ * Holds `busy` for the write like every other branch does (#117): leaving
+ * unmounts the form, and the confirmation is set here after the await, so Back
+ * and the date stay disabled until it has landed.
+ */
+async function correctFood(food: NewFood, settle: (saved: boolean) => void) {
+  if (writing.value) return settle(false)
+
+  writing.value = true
+  busy.value = true
+
+  try {
+    await store.saveFood(food)
+    settle(true)
+    outcome.value = { logged: false, corrected: true, what: food.name, date: date.value }
+    choice.value = { kind: 'variation' }
+  } catch {
+    // The form keeps what was typed and says so; nothing else changes.
+    settle(false)
+  } finally {
+    writing.value = false
+    busy.value = false
+  }
+}
+
 async function logFood(food: NewFood, grams: number) {
   if (!validDate.value || writing.value) return
 
@@ -427,7 +466,12 @@ async function logFood(food: NewFood, grams: number) {
     </section>
 
     <p v-if="outcome" class="confirmation" role="status">
-      <template v-if="outcome.logged">
+      <!-- Says nothing was logged rather than only that something changed: the
+           user pressed a button on a screen whose other buttons log, and a
+           correction that read like intake would put a meal in their head that
+           is not in their day (§3, #93). -->
+      <template v-if="outcome.corrected">Updated {{ outcome.what }}. Nothing was logged.</template>
+      <template v-else-if="outcome.logged">
         Logged {{ outcome.what }} on {{ outcome.date }}.
         <RouterLink to="/">See the day</RouterLink>
       </template>
@@ -687,7 +731,7 @@ async function logFood(food: NewFood, grams: number) {
             purpose="choose"
             @select="choice = { kind: 'variation', source: $event }"
           />
-          <FoodForm v-else :source="choice.source" @submit="logFood" />
+          <FoodForm v-else :source="choice.source" @submit="logFood" @save="correctFood" />
         </template>
 
         <MealTemplateForm
