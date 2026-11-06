@@ -493,6 +493,54 @@ describe('LogView', () => {
       expect(wrapper.find('#log-date').attributes('disabled')).toBeUndefined()
     })
 
+    describe('when the write fails', () => {
+      const failing = async () => {
+        await db.foods.put({ ...yoghurt, updatedAt: 1 })
+        const store = useLogStore()
+        vi.spyOn(store, 'saveFood').mockRejectedValue(new Error('quota'))
+
+        const wrapper = await render()
+        await openYoghurt(wrapper)
+        await wrapper.find('#food-energy').setValue('70')
+        await saveOnly(wrapper).trigger('click')
+        await flushPromises()
+
+        return wrapper
+      }
+
+      it('keeps the typed values and says the correction was not saved', async () => {
+        const wrapper = await failing()
+
+        expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('70')
+        expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('Yoghurt')
+        expect(wrapper.findAll('.problem').map((problem) => problem.text())).toContain(
+          'Could not save the correction. Try again.',
+        )
+      })
+
+      it('stays on the form with no confirmation, and releases Back and the date', async () => {
+        const wrapper = await failing()
+
+        expect(wrapper.find('#picker-query').exists()).toBe(false)
+        expect(wrapper.find('.confirmation').exists()).toBe(false)
+        expect(wrapper.find('.back').attributes('disabled')).toBeUndefined()
+        expect(wrapper.find('#log-date').attributes('disabled')).toBeUndefined()
+        expect(await db.logEntries.count()).toBe(0)
+        expect((await db.foods.get('yoghurt'))!.per100g.energy?.value).toBe(66)
+      })
+
+      it('lands as usual when the retry succeeds', async () => {
+        const wrapper = await failing()
+        vi.mocked(useLogStore().saveFood).mockRestore()
+
+        await saveOnly(wrapper).trigger('click')
+        await vi.waitFor(() => expect(wrapper.find('.confirmation').exists()).toBe(true))
+
+        expect(wrapper.find('.confirmation').text()).toBe('Updated Yoghurt. Nothing was logged.')
+        expect((await db.foods.get('yoghurt'))!.per100g.energy?.value).toBe(70)
+      })
+    })
+
     it('writes once however quickly the button is pressed twice', async () => {
       await db.foods.put({ ...yoghurt, updatedAt: 1 })
       const store = useLogStore()

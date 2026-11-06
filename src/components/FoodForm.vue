@@ -18,8 +18,14 @@ const { source } = defineProps<{
 
 const emit = defineEmits<{
   submit: [food: NewFood, grams: number]
-  /** A correction stored without logging it (#93): a food and nothing else. */
-  save: [food: NewFood]
+  /**
+   * A correction stored without logging it (#93): a food and nothing else.
+   *
+   * `settle` is how the host reports the write: true once it landed, false if it
+   * failed. The form keeps what was typed until then, so a failed write loses
+   * nothing.
+   */
+  save: [food: NewFood, settle: (saved: boolean) => void]
 }>()
 
 // The seven a label declares, not every nutrient the registry tracks (#56).
@@ -70,26 +76,35 @@ const parsedValues = computed(() =>
   keys.map((key) => ({ key, parsed: parseAmount(values.value[key] ?? '') })),
 )
 
-/** Fields holding something that is not a number at all. */
-const notNumeric = computed(() => {
-  const bad = parsedValues.value
+/** Value fields holding something that is not a number at all. */
+const notNumericValues = computed(() =>
+  parsedValues.value
     .filter((entry) => entry.parsed.kind === 'not-a-number')
-    .map((entry) => labelFor(entry.key))
+    .map((entry) => labelFor(entry.key)),
+)
 
-  if (parsedGrams.value.kind === 'not-a-number') bad.unshift('Eaten')
-
-  return bad
-})
-
-const negative = computed(() => {
-  const bad = parsedValues.value
+const negativeValues = computed(() =>
+  parsedValues.value
     .filter((entry) => entry.parsed.kind === 'number' && entry.parsed.value < 0)
-    .map((entry) => labelFor(entry.key))
+    .map((entry) => labelFor(entry.key)),
+)
 
-  if (parsedGrams.value.kind === 'number' && parsedGrams.value.value < 0) bad.unshift('Eaten')
+/**
+ * What is shown: the value fields plus the amount, which blocks logging only.
+ * Built from the two above so what blocks saving the food and what is reported
+ * cannot drift apart.
+ */
+const notNumeric = computed(() =>
+  parsedGrams.value.kind === 'not-a-number'
+    ? ['Eaten', ...notNumericValues.value]
+    : notNumericValues.value,
+)
 
-  return bad
-})
+const negative = computed(() =>
+  parsedGrams.value.kind === 'number' && parsedGrams.value.value < 0
+    ? ['Eaten', ...negativeValues.value]
+    : negativeValues.value,
+)
 
 const isBad = (key: NutrientKey) => {
   const parsed = parseAmount(values.value[key] ?? '')
@@ -105,10 +120,8 @@ const isBad = (key: NutrientKey) => {
 const canSave = computed(
   () =>
     name.value.trim().length > 0 &&
-    parsedValues.value.every(
-      ({ parsed }) =>
-        parsed.kind !== 'not-a-number' && !(parsed.kind === 'number' && parsed.value < 0),
-    ),
+    notNumericValues.value.length === 0 &&
+    negativeValues.value.length === 0,
 )
 
 const canSubmit = computed(() => {
@@ -161,12 +174,23 @@ function submit(mode: 'new' | 'update' = 'new') {
   reset()
 }
 
+/** True from the emit until the host settles, so a second press cannot write twice. */
+const saving = ref(false)
+const saveFailed = ref(false)
+
 /** Stores the correction and nothing else: no amount is read, no entry written (#93). */
 function saveOnly() {
-  if (!source || !canSaveOnly.value || !canSave.value) return
+  if (!source || !canSaveOnly.value || !canSave.value || saving.value) return
 
-  emit('save', editedFood(source.id))
-  reset()
+  saving.value = true
+  saveFailed.value = false
+
+  emit('save', editedFood(source.id), (saved) => {
+    saving.value = false
+
+    if (saved) reset()
+    else saveFailed.value = true
+  })
 }
 </script>
 
@@ -232,6 +256,9 @@ function saveOnly() {
         <p v-else-if="nameIsUnchanged" class="problem" role="status">
           Give the copy its own name, or update {{ source!.name }} instead.
         </p>
+        <p v-if="saveFailed" class="problem" role="status">
+          Could not save the correction. Try again.
+        </p>
 
         <!-- Three outcomes from one screen, named at the moment the user knows
              which they meant. Correcting is safe: log entries snapshot their
@@ -255,7 +282,7 @@ function saveOnly() {
             v-if="canSaveOnly"
             type="button"
             class="ghost"
-            :disabled="!canSave"
+            :disabled="!canSave || saving"
             @click="saveOnly"
           >
             Update {{ source.name }} without logging

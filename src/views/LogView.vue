@@ -413,16 +413,20 @@ const writing = ref(false)
  * unmounts the form, and the confirmation is set here after the await, so Back
  * and the date stay disabled until it has landed.
  */
-async function correctFood(food: NewFood) {
-  if (writing.value) return
+async function correctFood(food: NewFood, settle: (saved: boolean) => void) {
+  if (writing.value) return settle(false)
 
   writing.value = true
   busy.value = true
 
   try {
     await store.saveFood(food)
+    settle(true)
     outcome.value = { logged: false, corrected: true, what: food.name, date: date.value }
     choice.value = { kind: 'variation' }
+  } catch {
+    // The form keeps what was typed and says so; nothing else changes.
+    settle(false)
   } finally {
     writing.value = false
     busy.value = false

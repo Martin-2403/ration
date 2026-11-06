@@ -329,6 +329,9 @@ describe('FoodForm, saving a correction without logging', () => {
       .findAll('button')
       .find((button) => button.text() === 'Update Yoghurt, 3.5% without logging')!
 
+  const settleWith = (wrapper: ReturnType<typeof render>, saved: boolean) =>
+    (wrapper.emitted('save')![0] as [NewFood, (saved: boolean) => void])[1](saved)
+
   const logging = (wrapper: ReturnType<typeof render>) =>
     wrapper.findAll('button').filter((button) => /and log$/.test(button.text()))
 
@@ -352,8 +355,10 @@ describe('FoodForm, saving a correction without logging', () => {
     await saveOnly(wrapper).trigger('click')
 
     expect(wrapper.emitted('submit')).toBeUndefined()
-    const [food, ...rest] = wrapper.emitted('save')![0] as [NewFood]
+    const [food, settle, ...rest] = wrapper.emitted('save')![0] as [NewFood, () => void]
+    // A food and the way to report the write: no amount.
     expect(rest).toEqual([])
+    expect(settle).toBeTypeOf('function')
     expect(food.id).toBe('yoghurt')
     expect(food.per100g.energy).toEqual({ value: 70, source: 'user' })
     // Untouched figures keep the label's provenance, as for the other actions.
@@ -425,13 +430,59 @@ describe('FoodForm, saving a correction without logging', () => {
     expect(wrapper.emitted('save')).toBeUndefined()
   })
 
-  it('clears itself after saving, like the actions that log', async () => {
+  it('clears itself once the host reports the write landed', async () => {
     const wrapper = render()
     await wrapper.find('#food-energy').setValue('70')
     await saveOnly(wrapper).trigger('click')
 
+    // Not before: a failed write must find the input still there.
+    expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('70')
+    settleWith(wrapper, true)
+    await wrapper.vm.$nextTick()
+
     expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('')
     expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('keeps what was typed and says so when the write fails, then lets it be retried', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-name').setValue('Yoghurt, plain')
+    await wrapper.find('#food-energy').setValue('70')
+    await saveOnly(wrapper).trigger('click')
+    settleWith(wrapper, false)
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.find('#food-name').element as HTMLInputElement).value).toBe('Yoghurt, plain')
+    expect((wrapper.find('#food-energy').element as HTMLInputElement).value).toBe('70')
+    expect(wrapper.find('.problem').text()).toBe('Could not save the correction. Try again.')
+    expect(saveOnly(wrapper).attributes('disabled')).toBeUndefined()
+
+    await saveOnly(wrapper).trigger('click')
+    expect(wrapper.emitted('save')).toHaveLength(2)
+    // The message is for the last attempt only.
+    expect(wrapper.text()).not.toContain('Could not save')
+  })
+
+  it('does not emit a second write while the first is unsettled', async () => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue('70')
+    await saveOnly(wrapper).trigger('click')
+    await saveOnly(wrapper).trigger('click')
+
+    expect(wrapper.emitted('save')).toHaveLength(1)
+  })
+
+  // canSave is built from the same checks that name the problem, so whatever the
+  // form reports as wrong with a value also blocks storing the food.
+  it.each([
+    ['not a number', 'abc', 'Not a number: Energy'],
+    ['negative', '-3', 'Cannot be negative: Energy'],
+  ])('is blocked by a value reported as %s', async (_name, typed, message) => {
+    const wrapper = render()
+    await wrapper.find('#food-energy').setValue(typed)
+
+    expect(wrapper.text()).toContain(message)
+    expect(saveOnly(wrapper).attributes('disabled')).toBeDefined()
   })
 
   it('is not offered on a food that ships with the app', () => {
