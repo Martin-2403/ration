@@ -308,15 +308,6 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(await db.mealTemplates.count()).toBe(2)
     })
 
-    it('stores nothing when the day is cancelled', async () => {
-      const wrapper = await render()
-      await addSingle(wrapper, 'Banana', '120')
-      await buttonNamed(wrapper, 'Cancel').trigger('click')
-
-      expect(wrapper.emitted('cancel')).toHaveLength(1)
-      expect(await db.mealTemplates.count()).toBe(0)
-    })
-
     it('does not store a food that was removed from the day again', async () => {
       const wrapper = await render()
       await addSingle(wrapper, 'Banana', '120')
@@ -327,7 +318,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(await db.mealTemplates.count()).toBe(0)
     })
 
-    it('is a step of the host: asks to open, leaves Back to it, and asks to close once added (#130)', async () => {
+    it('is a step of the host: asks to open, leaves leaving it to the host, and asks to close once added (#130)', async () => {
       const wrapper = await render()
       await wrapper.find('#day-name').setValue('Snack day')
 
@@ -336,10 +327,9 @@ describe('DayTemplateForm, correcting a saved day', () => {
       expect(wrapper.emitted('update:sub')).toEqual([['single-food']])
       expect(wrapper.find('#day-name').exists()).toBe(false)
 
-      // It does not close the step itself: the host's history must agree.
-      await buttonNamed(wrapper, '← Back to the day').trigger('click')
-      expect(wrapper.emitted('back')).toHaveLength(1)
-      expect(wrapper.find('#day-name').exists()).toBe(false)
+      // It draws no Back of its own, so it cannot close the step behind the
+      // host's history; the host's single control does (#95).
+      expect(wrapper.find('.back').exists()).toBe(false)
 
       await wrapper
         .findAll('.results button')
@@ -397,7 +387,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
     })
   })
 
-  it('holds Cancel disabled and announces busy from the save, leaving the release to the host (#117)', async () => {
+  it('announces busy from the save, leaving the release to the host (#117)', async () => {
     const draft: NewDayTemplate = { id: 'workday', name: 'Workday', mealTemplateIds: ['porridge'] }
     const wrapper = await render(draft, true)
 
@@ -413,7 +403,6 @@ describe('DayTemplateForm, correcting a saved day', () => {
 
     await buttonNamed(wrapper, 'Save the changes').trigger('click')
 
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('busy')).toEqual([[true]])
 
     release()
@@ -421,8 +410,7 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await flushPromises()
 
     // Not released here: the host reloads and then leaves the form, and owns
-    // clearing `busy` until it has. Cancel stays disabled for the same span.
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeDefined()
+    // clearing `busy` until it has.
     expect(wrapper.emitted('busy')).toEqual([[true]])
   })
 
@@ -438,6 +426,5 @@ describe('DayTemplateForm, correcting a saved day', () => {
     await flushPromises()
 
     expect(wrapper.emitted('busy')).toEqual([[true], [false]])
-    expect(buttonNamed(wrapper, 'Cancel').attributes('disabled')).toBeUndefined()
   })
 })

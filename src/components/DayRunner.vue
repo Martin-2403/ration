@@ -24,7 +24,16 @@ const { template, eatenAt } = defineProps<{
   eatenAt?: number
 }>()
 
-const emit = defineEmits<{ done: [logged: number] }>()
+const emit = defineEmits<{
+  done: [logged: number]
+  /**
+   * Whether the current meal's write is in flight, passed on from the builder.
+   * The host holds its own ways out disabled while it is: leaving unmounts this
+   * runner, and an emit from an unmounted instance is never delivered, so the
+   * meal would land but the run would never count it (#163, as #108 and #117).
+   */
+  busy: [value: boolean]
+}>()
 
 const meals = ref<ResolvedMeal[]>([])
 const missing = ref<string[]>([])
@@ -39,6 +48,17 @@ const ready = ref(false)
  * never delivered, so the entry lands but nothing counts it (#108).
  */
 const writing = ref(false)
+
+/**
+ * Forwarded in the same synchronous stack as the builder's own emit, never from
+ * a watcher on `writing`: a watcher runs a microtask late, by which time the
+ * builder has keyed away and the host may have moved on (see MealBuilder's
+ * logMeal, #108).
+ */
+function setWriting(value: boolean) {
+  writing.value = value
+  emit('busy', value)
+}
 
 /** Which meal is on screen. Equal to meals.length once the day is finished. */
 const step = ref(0)
@@ -102,7 +122,7 @@ function advance(didLog: boolean) {
           :template="current.template"
           :eaten-at="eatenAt"
           @logged="advance(true)"
-          @busy="writing = $event"
+          @busy="setWriting"
         />
 
         <div class="footer">

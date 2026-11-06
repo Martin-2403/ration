@@ -38,10 +38,16 @@ describe('SingleFoodStep', () => {
     expect(wrapper.emitted('add')).toBeUndefined()
   })
 
-  it('goes back without choosing', async () => {
-    const wrapper = mount(SingleFoodStep)
-    await wrapper.find('.back').trigger('click')
+  it('leaves the way out to the host, so there is one Back for the page (#95)', async () => {
+    const wrapper = await choose()
 
-    expect(wrapper.emitted('back')).toHaveLength(1)
+    // At both of its steps: the host's control does what this one did.
+    expect(wrapper.find('.back').exists()).toBe(false)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Change food')!
+      .trigger('click')
+    expect(wrapper.find('.back').exists()).toBe(false)
+    expect(wrapper.emitted('back')).toBeUndefined()
   })
 })

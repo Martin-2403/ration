@@ -45,13 +45,10 @@ const { draft, existing, sub } = defineProps<{
 
 const emit = defineEmits<{
   'update:sub': [sub: 'single-food' | undefined]
-  /** Leave the current step for the one before it, as the host's Back does. */
-  back: []
   /** A day that did not exist before, whether built or copied. */
   saved: [template: NewDayTemplate]
   /** The same day, corrected. */
   updated: [template: NewDayTemplate]
-  cancel: []
   /**
    * Whether a save is in flight, and when it clears: see MealTemplateForm for
    * why a host needs it. `false` comes only from a failed save; the host
@@ -166,7 +163,7 @@ async function save() {
   } catch (error) {
     // Only a failed save hands the form back. After a successful one `saving`
     // and `busy` stay set: the host reloads and then leaves this form, and
-    // clearing them here would open a window in which Cancel or the host's own
+    // clearing them here would open a window in which the host's own
     // Back still works and its step would be overridden a moment later (#117).
     saving.value = false
     emit('busy', false)
@@ -176,7 +173,7 @@ async function save() {
 </script>
 
 <template>
-  <SingleFoodStep v-if="sub === 'single-food'" @add="addSingle" @back="emit('back')" />
+  <SingleFoodStep v-if="sub === 'single-food'" @add="addSingle" />
 
   <section v-else class="card">
     <p class="hint">
@@ -254,7 +251,6 @@ async function save() {
       <!-- A blocked save always names what is missing. -->
       <p v-if="problems.length > 0" class="problem" role="status">{{ problems.join(' · ') }}</p>
 
-      <button type="button" class="ghost" :disabled="saving" @click="emit('cancel')">Cancel</button>
       <button type="button" :disabled="!canSave" @click="save">
         {{ existing ? 'Save the changes' : 'Save the day' }}
       </button>
